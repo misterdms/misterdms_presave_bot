@@ -471,6 +471,61 @@ class WebhookHandler(BaseHTTPRequestHandler):
             })
             self.wfile.write(response.encode())
             logger.info(f"✅ HEALTH_RESPONSE: Sent health check response")
+        elif self.path == WEBHOOK_PATH:
+            logger.info(f"📋 WEBHOOK_INFO: GET request to webhook URL - sending info page")
+            self.send_response(200)
+            self.send_header('Content-type', 'text/html; charset=utf-8')
+            self.end_headers()
+            
+            info_page = f"""
+            <!DOCTYPE html>
+            <html>
+            <head>
+                <title>Presave Reminder Bot - Webhook</title>
+                <meta charset="utf-8">
+                <style>
+                    body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
+                    .header {{ text-align: center; color: #2196F3; }}
+                    .status {{ background: #E8F5E8; padding: 15px; border-radius: 8px; margin: 20px 0; }}
+                    .info {{ background: #F5F5F5; padding: 15px; border-radius: 8px; margin: 20px 0; }}
+                    .warning {{ background: #FFF3E0; padding: 15px; border-radius: 8px; margin: 20px 0; }}
+                </style>
+            </head>
+            <body>
+                <div class="header">
+                    <h1>🤖 Presave Reminder Bot</h1>
+                    <h2>Webhook Endpoint</h2>
+                </div>
+                
+                <div class="status">
+                    <h3>✅ Status: Active</h3>
+                    <p>Webhook is operational and ready to receive updates from Telegram.</p>
+                </div>
+                
+                <div class="info">
+                    <h3>📋 Information</h3>
+                    <p><strong>Bot:</strong> @misterdms_presave_bot</p>
+                    <p><strong>Service:</strong> Presave Reminder Bot</p>
+                    <p><strong>Architecture:</strong> Webhook (HTTP POST)</p>
+                    <p><strong>Host:</strong> {WEBHOOK_HOST}</p>
+                </div>
+                
+                <div class="warning">
+                    <h3>⚠️ Notice</h3>
+                    <p>This endpoint is designed for Telegram Bot API webhooks only.</p>
+                    <p>It accepts POST requests from Telegram servers to process bot updates.</p>
+                    <p>For health check, visit: <a href="/">/health</a></p>
+                </div>
+                
+                <div style="text-align: center; margin-top: 30px; color: #666;">
+                    <p>Powered by Render.com | Webhook Architecture</p>
+                </div>
+            </body>
+            </html>
+            """
+            
+            self.wfile.write(info_page.encode('utf-8'))
+            logger.info(f"✅ WEBHOOK_INFO_SENT: Webhook info page sent successfully")
         else:
             logger.warning(f"❓ HTTP_UNKNOWN: Unknown GET path: {self.path}")
             self.send_response(404)
