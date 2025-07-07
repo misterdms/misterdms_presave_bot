@@ -751,32 +751,71 @@ def main():
         health_thread = threading.Thread(target=start_health_server, daemon=True)
         health_thread.start()
         
-        # КРИТИЧЕСКИ ВАЖНО: Очищаем webhook перед запуском polling
-        try:
-            bot.remove_webhook()
-            logger.info("✅ Webhook очищен")
-            time.sleep(2)  # Даем время Telegram API обработать
-        except Exception as e:
-            logger.warning(f"Предупреждение при очистке webhook: {e}")
+        # АГРЕССИВНАЯ очистка Telegram API состояния
+        logger.info("🔄 Принудительная очистка API состояния...")
+        max_attempts = 5
+        for attempt in range(max_attempts):
+            try:
+                # Удаляем webhook
+                bot.remove_webhook()
+                logger.info(f"✅ Webhook удален (попытка {attempt + 1})")
+                
+                # Принудительно получаем updates с большим offset чтобы очистить очередь
+                try:
+                    updates = bot.get_updates(offset=-1, timeout=1)
+                    if updates:
+                        # Получаем последний update_id и очищаем очередь
+                        last_id = updates[-1].update_id
+                        bot.get_updates(offset=last_id + 1, timeout=1)
+                        logger.info(f"✅ Очередь updates очищена до ID {last_id}")
+                except Exception as e:
+                    logger.info(f"⚠️ Попытка очистки updates: {e}")
+                
+                # Увеличиваем задержку с каждой попыткой
+                delay = 3 + (attempt * 2)
+                logger.info(f"⏳ Ожидание {delay} секунд...")
+                time.sleep(delay)
+                
+                # Пробуем один test request
+                try:
+                    me = bot.get_me()
+                    logger.info(f"✅ API тест успешен: @{me.username}")
+                    break
+                except Exception as e:
+                    if "409" in str(e):
+                        logger.warning(f"❌ Попытка {attempt + 1}: все еще конфликт 409")
+                        if attempt == max_attempts - 1:
+                            logger.error("🚨 Не удалось очистить конфликт API. Требуется новый токен!")
+                            return
+                    else:
+                        logger.info(f"✅ Другая ошибка API (не 409): {e}")
+                        break
+                        
+            except Exception as e:
+                logger.warning(f"Ошибка при очистке API (попытка {attempt + 1}): {e}")
         
         logger.info("🤖 Presave Reminder Bot запущен и готов к работе!")
         logger.info(f"👥 Группа: {GROUP_ID}")
         logger.info(f"📋 Топик: {THREAD_ID}")
         logger.info(f"👑 Админы: {ADMIN_IDS}")
         
-        # Запуск бота с обработкой ошибок
+        # Запуск бота с увеличенными таймаутами для надежности
         bot.infinity_polling(
             none_stop=True, 
-            interval=0,
+            interval=1,  # Небольшая пауза между запросами
+            timeout=20,  # Увеличенный timeout
+            long_polling_timeout=20,
             allowed_updates=['message', 'callback_query'],
             restart_on_change=False
         )
         
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
-        # Пытаемся очистить webhook при крэше
+        # Финальная попытка очистки при крэше
         try:
             bot.remove_webhook()
+            # Очищаем updates
+            bot.get_updates(offset=-1, timeout=1)
         except:
             pass
     finally:
