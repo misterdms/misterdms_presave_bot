@@ -483,6 +483,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             <head>
                 <title>Presave Reminder Bot - Webhook</title>
                 <meta charset="utf-8">
+                <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🤖</text></svg>">
                 <style>
                     body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
                     .header {{ text-align: center; color: #2196F3; }}
@@ -526,6 +527,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
             
             self.wfile.write(info_page.encode('utf-8'))
             logger.info(f"✅ WEBHOOK_INFO_SENT: Webhook info page sent successfully")
+        elif self.path == '/favicon.ico':
+            logger.info(f"🎨 FAVICON: Browser requested favicon")
+            # Отвечаем пустым favicon чтобы убрать WARNING из логов
+            self.send_response(204)  # No Content
+            self.end_headers()
+            logger.info(f"✅ FAVICON_HANDLED: Favicon request handled successfully")
         else:
             logger.warning(f"❓ HTTP_UNKNOWN: Unknown GET path: {self.path}")
             self.send_response(404)
