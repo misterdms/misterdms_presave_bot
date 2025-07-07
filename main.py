@@ -5,6 +5,8 @@ import time
 import threading
 from datetime import datetime, timedelta
 from typing import Optional
+from http.server import HTTPServer, BaseHTTPRequestHandler
+import socketserver
 
 import telebot
 from telebot import types
@@ -39,6 +41,32 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Health Check Server для Render.com
+class HealthCheckHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health' or self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "healthy", "service": "telegram-bot"}')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Отключаем логи HTTP запросов для чистоты
+        pass
+
+def start_health_server():
+    """Запуск HTTP сервера для health checks"""
+    port = int(os.getenv('PORT', 10000))  # Render использует переменную PORT
+    try:
+        with socketserver.TCPServer(("", port), HealthCheckHandler) as httpd:
+            logger.info(f"Health check server запущен на порту {port}")
+            httpd.serve_forever()
+    except Exception as e:
+        logger.error(f"Ошибка запуска health server: {e}")
 
 class Database:
     def __init__(self, db_path: str = "bot.db"):
@@ -718,6 +746,10 @@ def main():
     try:
         # Инициализация базы данных
         db.init_db()
+        
+        # Запуск health check сервера в отдельном потоке
+        health_thread = threading.Thread(target=start_health_server, daemon=True)
+        health_thread.start()
         
         logger.info("🤖 Presave Reminder Bot запущен и готов к работе!")
         logger.info(f"👥 Группа: {GROUP_ID}")
