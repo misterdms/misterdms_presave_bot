@@ -7,19 +7,21 @@ from datetime import datetime, timedelta
 from typing import Optional
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import socketserver
+import json
+import ssl
+import os
 
 import telebot
 from telebot import types
 from dotenv import load_dotenv
-import os
 
 # Загрузка переменных окружения
 load_dotenv()
 
 # Конфигурация
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-GROUP_ID = int(os.getenv('GROUP_ID'))  # -1002811959953
-THREAD_ID = int(os.getenv('THREAD_ID'))  # 3
+GROUP_ID = int(os.getenv('GROUP_ID'))  # -1001992546193
+THREAD_ID = int(os.getenv('THREAD_ID'))  # 10
 ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '').split(',') if x]
 DEFAULT_REMINDER = os.getenv('REMINDER_TEXT', '🎧 Напоминаем: не забудьте сделать пресейв артистов выше! ♥️')
 
@@ -28,6 +30,12 @@ MAX_RESPONSES_PER_HOUR = 10
 MIN_COOLDOWN_SECONDS = 30
 BATCH_RESPONSE_WINDOW = 300  # 5 минут
 RESPONSE_DELAY = 3
+
+# Webhook настройки
+WEBHOOK_HOST = "misterdms-presave-bot.onrender.com"  # Ваш Render URL
+WEBHOOK_PORT = int(os.getenv('PORT', 10000))
+WEBHOOK_PATH = f"/{BOT_TOKEN}/"
+WEBHOOK_URL = f"https://{WEBHOOK_HOST}{WEBHOOK_PATH}"
 
 # Regex для поиска ссылок
 URL_PATTERN = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
@@ -41,32 +49,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Health Check Server для Render.com
-class HealthCheckHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == '/health' or self.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(b'{"status": "healthy", "service": "telegram-bot"}')
-        else:
-            self.send_response(404)
-            self.end_headers()
-    
-    def log_message(self, format, *args):
-        # Отключаем логи HTTP запросов для чистоты
-        pass
-
-def start_health_server():
-    """Запуск HTTP сервера для health checks"""
-    port = int(os.getenv('PORT', 10000))  # Render использует переменную PORT
-    try:
-        with socketserver.TCPServer(("", port), HealthCheckHandler) as httpd:
-            logger.info(f"Health check server запущен на порту {port}")
-            httpd.serve_forever()
-    except Exception as e:
-        logger.error(f"Ошибка запуска health server: {e}")
 
 class Database:
     def __init__(self, db_path: str = "bot.db"):
@@ -396,6 +378,72 @@ def safe_send_message(chat_id: int, text: str, message_thread_id: int = None, re
         logger.error(f"Ошибка отправки сообщения: {e}")
         return False
 
+# Webhook сервер
+class WebhookHandler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        """Обработка POST запросов от Telegram"""
+        if self.path == WEBHOOK_PATH:
+            try:
+                # Получаем данные
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                
+                # Парсим JSON
+                update_data = json.loads(post_data.decode('utf-8'))
+                
+                # Создаем объект Update
+                update = telebot.types.Update.de_json(update_data)
+                
+                # Обрабатываем update
+                if update:
+                    bot.process_new_updates([update])
+                
+                # Отвечаем Telegram
+                self.send_response(200)
+                self.end_headers()
+                
+            except Exception as e:
+                logger.error(f"Ошибка обработки webhook: {e}")
+                self.send_response(500)
+                self.end_headers()
+        
+        elif self.path == '/' or self.path == '/health':
+            # Health check
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            response = json.dumps({
+                "status": "healthy", 
+                "service": "telegram-bot",
+                "webhook_url": WEBHOOK_URL,
+                "bot": "@misterdms_presave_bot"
+            })
+            self.wfile.write(response.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def do_GET(self):
+        """Обработка GET запросов"""
+        if self.path == '/' or self.path == '/health':
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            response = json.dumps({
+                "status": "healthy", 
+                "service": "telegram-bot",
+                "webhook_url": WEBHOOK_URL,
+                "bot": "@misterdms_presave_bot"
+            })
+            self.wfile.write(response.encode())
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Отключаем HTTP логи для чистоты
+        pass
+
 # === ОБРАБОТЧИКИ КОМАНД ===
 
 @bot.message_handler(commands=['start'])
@@ -499,6 +547,7 @@ def cmd_bot_stat(message):
 ⚡ Ответов в час: {stats['hourly_responses']}/{stats['hourly_limit']}
 📊 Ответов за сегодня: {stats['today_responses']}
 ⏱️ {cooldown_text}
+🔗 Webhook: активен
 
 ⚠️ Предупреждений: {'🟡 Приближение к лимиту' if stats['hourly_responses'] >= 8 else '✅ Всё в порядке'}
         """
@@ -739,7 +788,21 @@ def handle_topic_message(message):
     except Exception as e:
         logger.error(f"Ошибка обработки сообщения: {e}")
 
-# === ЗАПУСК БОТА ===
+def setup_webhook():
+    """Настройка webhook"""
+    try:
+        # Удаляем старый webhook
+        bot.remove_webhook()
+        logger.info("✅ Старый webhook удален")
+        
+        # Устанавливаем новый webhook
+        bot.set_webhook(url=WEBHOOK_URL)
+        logger.info(f"✅ Webhook установлен: {WEBHOOK_URL}")
+        
+        return True
+    except Exception as e:
+        logger.error(f"Ошибка установки webhook: {e}")
+        return False
 
 def main():
     """Основная функция запуска бота"""
@@ -747,78 +810,33 @@ def main():
         # Инициализация базы данных
         db.init_db()
         
-        # Запуск health check сервера в отдельном потоке
-        health_thread = threading.Thread(target=start_health_server, daemon=True)
-        health_thread.start()
-        
-        # АГРЕССИВНАЯ очистка Telegram API состояния
-        logger.info("🔄 Принудительная очистка API состояния...")
-        max_attempts = 5
-        for attempt in range(max_attempts):
-            try:
-                # Удаляем webhook
-                bot.remove_webhook()
-                logger.info(f"✅ Webhook удален (попытка {attempt + 1})")
-                
-                # Принудительно получаем updates с большим offset чтобы очистить очередь
-                try:
-                    updates = bot.get_updates(offset=-1, timeout=1)
-                    if updates:
-                        # Получаем последний update_id и очищаем очередь
-                        last_id = updates[-1].update_id
-                        bot.get_updates(offset=last_id + 1, timeout=1)
-                        logger.info(f"✅ Очередь updates очищена до ID {last_id}")
-                except Exception as e:
-                    logger.info(f"⚠️ Попытка очистки updates: {e}")
-                
-                # Увеличиваем задержку с каждой попыткой
-                delay = 3 + (attempt * 2)
-                logger.info(f"⏳ Ожидание {delay} секунд...")
-                time.sleep(delay)
-                
-                # Пробуем один test request
-                try:
-                    me = bot.get_me()
-                    logger.info(f"✅ API тест успешен: @{me.username}")
-                    break
-                except Exception as e:
-                    if "409" in str(e):
-                        logger.warning(f"❌ Попытка {attempt + 1}: все еще конфликт 409")
-                        if attempt == max_attempts - 1:
-                            logger.error("🚨 Не удалось очистить конфликт API. Требуется новый токен!")
-                            return
-                    else:
-                        logger.info(f"✅ Другая ошибка API (не 409): {e}")
-                        break
-                        
-            except Exception as e:
-                logger.warning(f"Ошибка при очистке API (попытка {attempt + 1}): {e}")
-        
         logger.info("🤖 Presave Reminder Bot запущен и готов к работе!")
         logger.info(f"👥 Группа: {GROUP_ID}")
         logger.info(f"📋 Топик: {THREAD_ID}")
         logger.info(f"👑 Админы: {ADMIN_IDS}")
         
-        # Запуск бота с увеличенными таймаутами для надежности
-        bot.infinity_polling(
-            none_stop=True, 
-            interval=1,  # Небольшая пауза между запросами
-            timeout=20,  # Увеличенный timeout
-            long_polling_timeout=20,
-            allowed_updates=['message', 'callback_query'],
-            restart_on_change=False
-        )
+        # Настройка webhook
+        if setup_webhook():
+            logger.info("🔗 Webhook режим активен")
+        else:
+            logger.error("❌ Ошибка настройки webhook")
+            return
+        
+        # Запуск webhook сервера
+        with socketserver.TCPServer(("", WEBHOOK_PORT), WebhookHandler) as httpd:
+            logger.info(f"🌐 Webhook сервер запущен на порту {WEBHOOK_PORT}")
+            logger.info(f"🔗 URL: {WEBHOOK_URL}")
+            httpd.serve_forever()
         
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
-        # Финальная попытка очистки при крэше
+    finally:
+        # Очищаем webhook при остановке
         try:
             bot.remove_webhook()
-            # Очищаем updates
-            bot.get_updates(offset=-1, timeout=1)
+            logger.info("🧹 Webhook очищен при остановке")
         except:
             pass
-    finally:
         logger.info("Бот остановлен")
 
 if __name__ == "__main__":
