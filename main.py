@@ -1,14 +1,13 @@
-import asyncio
 import logging
 import re
 import sqlite3
 import time
+import threading
 from datetime import datetime, timedelta
 from typing import Optional
 
-from aiogram import Bot, Dispatcher, F, types
-from aiogram.filters import Command
-from aiogram.types import Message
+import telebot
+from telebot import types
 from dotenv import load_dotenv
 import os
 
@@ -32,8 +31,7 @@ RESPONSE_DELAY = 3
 URL_PATTERN = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
 
 # Инициализация бота
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+bot = telebot.TeleBot(BOT_TOKEN)
 
 # Настройка логирования
 logging.basicConfig(
@@ -45,12 +43,16 @@ logger = logging.getLogger(__name__)
 class Database:
     def __init__(self, db_path: str = "bot.db"):
         self.db_path = db_path
+        self.lock = threading.Lock()
     
     def init_db(self):
         """Инициализация базы данных"""
-        with sqlite3.connect(self.db_path) as db:
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
             # Таблица пользователей и их ссылок
-            db.execute('''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_links (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
@@ -60,7 +62,7 @@ class Database:
             ''')
             
             # Детальная история ссылок
-            db.execute('''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS link_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
@@ -71,7 +73,7 @@ class Database:
             ''')
             
             # Логи ответов бота
-            db.execute('''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS bot_responses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
@@ -81,7 +83,7 @@ class Database:
             ''')
             
             # Настройки бота
-            db.execute('''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
@@ -89,7 +91,7 @@ class Database:
             ''')
             
             # Активность бота
-            db.execute('''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS bot_activity (
                     id INTEGER PRIMARY KEY,
                     is_active BOOLEAN DEFAULT 1,
@@ -100,7 +102,7 @@ class Database:
             ''')
             
             # Лимиты и cooldown
-            db.execute('''
+            cursor.execute('''
                 CREATE TABLE IF NOT EXISTS rate_limits (
                     id INTEGER PRIMARY KEY,
                     hourly_responses INTEGER DEFAULT 0,
@@ -110,66 +112,83 @@ class Database:
             ''')
             
             # Инициализация базовых записей
-            db.execute('INSERT OR IGNORE INTO bot_activity (id, is_active) VALUES (1, 1)')
-            db.execute('INSERT OR IGNORE INTO rate_limits (id) VALUES (1)')
-            db.execute(
+            cursor.execute('INSERT OR IGNORE INTO bot_activity (id, is_active) VALUES (1, 1)')
+            cursor.execute('INSERT OR IGNORE INTO rate_limits (id) VALUES (1)')
+            cursor.execute(
                 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
                 ('reminder_text', DEFAULT_REMINDER)
             )
             
-            db.commit()
+            conn.commit()
+            conn.close()
             logger.info("База данных инициализирована")
 
     def add_user_links(self, user_id: int, username: str, links: list, message_id: int):
         """Добавление ссылок пользователя"""
-        with sqlite3.connect(self.db_path) as db:
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
             # Обновляем счётчик пользователя
-            db.execute('''
+            cursor.execute('''
                 INSERT OR REPLACE INTO user_links (user_id, username, total_links, last_updated)
                 VALUES (?, ?, COALESCE((SELECT total_links FROM user_links WHERE user_id = ?), 0) + ?, CURRENT_TIMESTAMP)
             ''', (user_id, username, user_id, len(links)))
             
             # Добавляем детальную историю
             for link in links:
-                db.execute('''
+                cursor.execute('''
                     INSERT INTO link_history (user_id, link_url, message_id)
                     VALUES (?, ?, ?)
                 ''', (user_id, link, message_id))
             
-            db.commit()
+            conn.commit()
+            conn.close()
 
     def log_bot_response(self, user_id: int, response_text: str):
         """Логирование ответа бота"""
-        with sqlite3.connect(self.db_path) as db:
-            db.execute('''
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
                 INSERT INTO bot_responses (user_id, response_text)
                 VALUES (?, ?)
             ''', (user_id, response_text))
-            db.commit()
+            conn.commit()
+            conn.close()
 
     def is_bot_active(self) -> bool:
         """Проверка активности бота"""
-        with sqlite3.connect(self.db_path) as db:
-            cursor = db.execute('SELECT is_active FROM bot_activity WHERE id = 1')
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT is_active FROM bot_activity WHERE id = 1')
             result = cursor.fetchone()
+            conn.close()
             return bool(result[0]) if result else False
 
     def set_bot_active(self, active: bool):
         """Установка статуса активности"""
-        with sqlite3.connect(self.db_path) as db:
-            db.execute('UPDATE bot_activity SET is_active = ? WHERE id = 1', (active,))
-            db.commit()
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('UPDATE bot_activity SET is_active = ? WHERE id = 1', (active,))
+            conn.commit()
+            conn.close()
 
     def can_send_response(self) -> tuple[bool, str]:
         """Проверка возможности отправки ответа с учетом лимитов"""
-        with sqlite3.connect(self.db_path) as db:
-            cursor = db.execute('''
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
                 SELECT hourly_responses, last_hour_reset, cooldown_until
                 FROM rate_limits WHERE id = 1
             ''')
             result = cursor.fetchone()
             
             if not result:
+                conn.close()
                 return False, "Ошибка получения лимитов"
             
             hourly_responses, last_hour_reset, cooldown_until = result
@@ -180,13 +199,14 @@ class Database:
                 cooldown_time = datetime.fromisoformat(cooldown_until)
                 if now < cooldown_time:
                     remaining = int((cooldown_time - now).total_seconds())
+                    conn.close()
                     return False, f"Cooldown активен. Осталось: {remaining} сек"
             
             # Сброс почасового счётчика
             if last_hour_reset:
                 last_reset = datetime.fromisoformat(last_hour_reset)
                 if now - last_reset > timedelta(hours=1):
-                    db.execute('''
+                    cursor.execute('''
                         UPDATE rate_limits 
                         SET hourly_responses = 0, last_hour_reset = ?
                         WHERE id = 1
@@ -195,68 +215,84 @@ class Database:
             
             # Проверяем почасовой лимит
             if hourly_responses >= MAX_RESPONSES_PER_HOUR:
+                conn.close()
                 return False, f"Достигнут лимит {MAX_RESPONSES_PER_HOUR} ответов в час"
             
+            conn.close()
             return True, "OK"
 
     def update_response_limits(self):
         """Обновление лимитов после отправки ответа"""
-        with sqlite3.connect(self.db_path) as db:
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
             now = datetime.now()
             cooldown_until = now + timedelta(seconds=MIN_COOLDOWN_SECONDS)
             
-            db.execute('''
+            cursor.execute('''
                 UPDATE rate_limits 
                 SET hourly_responses = hourly_responses + 1,
                     cooldown_until = ?
                 WHERE id = 1
             ''', (cooldown_until.isoformat(),))
             
-            db.commit()
+            conn.commit()
+            conn.close()
 
     def get_user_stats(self, username: str = None):
         """Получение статистики пользователей"""
-        with sqlite3.connect(self.db_path) as db:
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
             if username:
                 # Статистика конкретного пользователя
-                cursor = db.execute('''
+                cursor.execute('''
                     SELECT username, total_links, last_updated
                     FROM user_links 
                     WHERE username = ? AND total_links > 0
                 ''', (username.replace('@', ''),))
                 result = cursor.fetchone()
+                conn.close()
                 return result
             else:
                 # Общая статистика
-                cursor = db.execute('''
+                cursor.execute('''
                     SELECT username, total_links, last_updated
                     FROM user_links 
                     WHERE total_links > 0
                     ORDER BY total_links DESC
                 ''')
-                return cursor.fetchall()
+                result = cursor.fetchall()
+                conn.close()
+                return result
 
     def get_bot_stats(self):
         """Статистика работы бота"""
-        with sqlite3.connect(self.db_path) as db:
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            
             # Получаем лимиты
-            cursor = db.execute('''
+            cursor.execute('''
                 SELECT hourly_responses, cooldown_until FROM rate_limits WHERE id = 1
             ''')
             limits = cursor.fetchone()
             
             # Получаем активность
-            cursor = db.execute('''
+            cursor.execute('''
                 SELECT is_active, last_response_time FROM bot_activity WHERE id = 1
             ''')
             activity = cursor.fetchone()
             
             # Считаем ответы за сегодня
-            cursor = db.execute('''
+            cursor.execute('''
                 SELECT COUNT(*) FROM bot_responses 
                 WHERE DATE(timestamp) = DATE('now')
             ''')
             today_responses = cursor.fetchone()
+            
+            conn.close()
             
             return {
                 'hourly_responses': limits[0] if limits else 0,
@@ -269,24 +305,33 @@ class Database:
 
     def clear_link_history(self):
         """Очистка истории ссылок (счётчики остаются)"""
-        with sqlite3.connect(self.db_path) as db:
-            db.execute('DELETE FROM link_history')
-            db.commit()
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM link_history')
+            conn.commit()
+            conn.close()
 
     def get_reminder_text(self) -> str:
         """Получение текста напоминания"""
-        with sqlite3.connect(self.db_path) as db:
-            cursor = db.execute('SELECT value FROM settings WHERE key = ?', ('reminder_text',))
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('SELECT value FROM settings WHERE key = ?', ('reminder_text',))
             result = cursor.fetchone()
+            conn.close()
             return result[0] if result else DEFAULT_REMINDER
 
     def set_reminder_text(self, text: str):
         """Установка текста напоминания"""
-        with sqlite3.connect(self.db_path) as db:
-            db.execute('''
+        with self.lock:
+            conn = sqlite3.connect(self.db_path)
+            cursor = conn.cursor()
+            cursor.execute('''
                 INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
             ''', ('reminder_text', text))
-            db.commit()
+            conn.commit()
+            conn.close()
 
 # Инициализация базы данных
 db = Database()
@@ -299,16 +344,25 @@ def extract_links(text: str) -> list:
     """Извлечение ссылок из текста"""
     return URL_PATTERN.findall(text)
 
-async def safe_send_message(chat_id: int, text: str, message_thread_id: int = None, reply_to_message_id: int = None):
+def safe_send_message(chat_id: int, text: str, message_thread_id: int = None, reply_to_message_id: int = None):
     """Безопасная отправка сообщения с обработкой ошибок"""
     try:
-        await asyncio.sleep(RESPONSE_DELAY)  # Задержка перед отправкой
-        await bot.send_message(
-            chat_id=chat_id, 
-            text=text, 
-            message_thread_id=message_thread_id,
-            reply_to_message_id=reply_to_message_id
-        )
+        time.sleep(RESPONSE_DELAY)  # Задержка перед отправкой
+        
+        if message_thread_id:
+            # Если есть thread_id, отправляем в топик
+            bot.send_message(
+                chat_id=chat_id, 
+                text=text, 
+                message_thread_id=message_thread_id,
+                reply_to_message_id=reply_to_message_id
+            )
+        else:
+            # Обычное сообщение
+            if reply_to_message_id:
+                bot.reply_to(reply_to_message_id, text)
+            else:
+                bot.send_message(chat_id, text)
         return True
     except Exception as e:
         logger.error(f"Ошибка отправки сообщения: {e}")
@@ -316,20 +370,20 @@ async def safe_send_message(chat_id: int, text: str, message_thread_id: int = No
 
 # === ОБРАБОТЧИКИ КОМАНД ===
 
-@dp.message(Command("start"))
-async def cmd_start(message: Message):
+@bot.message_handler(commands=['start'])
+def cmd_start(message):
     if not is_admin(message.from_user.id):
         return
     
-    await message.answer("""
+    bot.reply_to(message, """
 🤖 Presave Reminder Bot запущен!
 
 Для управления используйте команду /help
 Бот работает только в настроенном топике группы.
     """)
 
-@dp.message(Command("help"))
-async def cmd_help(message: Message):
+@bot.message_handler(commands=['help'])
+def cmd_help(message):
     if not is_admin(message.from_user.id):
         return
     
@@ -353,16 +407,16 @@ async def cmd_help(message: Message):
 🛡️ Защита от спама: максимум 10 ответов в час, пауза 30 сек между ответами
     """
     
-    await message.answer(help_text)
+    bot.reply_to(message, help_text)
 
-@dp.message(Command("activate"))
-async def cmd_activate(message: Message):
+@bot.message_handler(commands=['activate'])
+def cmd_activate(message):
     if not is_admin(message.from_user.id):
         return
     
     # Проверяем, что команда в нужном топике
     if message.chat.id != GROUP_ID or message.message_thread_id != THREAD_ID:
-        await message.answer("❌ Команда должна выполняться в топике пресейвов")
+        bot.reply_to(message, "❌ Команда должна выполняться в топике пресейвов")
         return
     
     db.set_bot_active(True)
@@ -378,20 +432,20 @@ async def cmd_activate(message: Message):
 Готов к работе! 🎵
     """
     
-    await message.answer(welcome_text)
+    bot.reply_to(message, welcome_text)
     logger.info(f"Бот активирован пользователем {message.from_user.id}")
 
-@dp.message(Command("deactivate"))
-async def cmd_deactivate(message: Message):
+@bot.message_handler(commands=['deactivate'])
+def cmd_deactivate(message):
     if not is_admin(message.from_user.id):
         return
     
     db.set_bot_active(False)
-    await message.answer("🛑 Бот деактивирован. Для включения используйте /activate")
+    bot.reply_to(message, "🛑 Бот деактивирован. Для включения используйте /activate")
     logger.info(f"Бот деактивирован пользователем {message.from_user.id}")
 
-@dp.message(Command("botstat"))
-async def cmd_bot_stat(message: Message):
+@bot.message_handler(commands=['botstat'])
+def cmd_bot_stat(message):
     if not is_admin(message.from_user.id):
         return
     
@@ -421,14 +475,14 @@ async def cmd_bot_stat(message: Message):
 ⚠️ Предупреждений: {'🟡 Приближение к лимиту' if stats['hourly_responses'] >= 8 else '✅ Всё в порядке'}
         """
         
-        await message.answer(stat_text)
+        bot.reply_to(message, stat_text)
         
     except Exception as e:
         logger.error(f"Ошибка получения статистики бота: {e}")
-        await message.answer("❌ Ошибка получения статистики")
+        bot.reply_to(message, "❌ Ошибка получения статистики")
 
-@dp.message(Command("linkstats"))
-async def cmd_link_stats(message: Message):
+@bot.message_handler(commands=['linkstats'])
+def cmd_link_stats(message):
     if not is_admin(message.from_user.id):
         return
     
@@ -436,7 +490,7 @@ async def cmd_link_stats(message: Message):
         users = db.get_user_stats()
         
         if not users:
-            await message.answer("📊 Пока нет пользователей с ссылками")
+            bot.reply_to(message, "📊 Пока нет пользователей с ссылками")
             return
         
         stats_text = "📊 Статистика по ссылкам:\n\n"
@@ -454,14 +508,14 @@ async def cmd_link_stats(message: Message):
             
             stats_text += f"{rank} {i}. @{username} — {total_links} ссылок\n"
         
-        await message.answer(stats_text)
+        bot.reply_to(message, stats_text)
         
     except Exception as e:
         logger.error(f"Ошибка получения статистики ссылок: {e}")
-        await message.answer("❌ Ошибка получения статистики")
+        bot.reply_to(message, "❌ Ошибка получения статистики")
 
-@dp.message(Command("topusers"))
-async def cmd_top_users(message: Message):
+@bot.message_handler(commands=['topusers'])
+def cmd_top_users(message):
     if not is_admin(message.from_user.id):
         return
     
@@ -469,7 +523,7 @@ async def cmd_top_users(message: Message):
         users = db.get_user_stats()
         
         if not users:
-            await message.answer("🏆 Пока нет активных пользователей")
+            bot.reply_to(message, "🏆 Пока нет активных пользователей")
             return
         
         top_text = "🏆 Топ-5 самых активных:\n\n"
@@ -480,21 +534,21 @@ async def cmd_top_users(message: Message):
             
             top_text += f"{medal} @{username} — {total_links} ссылок\n"
         
-        await message.answer(top_text)
+        bot.reply_to(message, top_text)
         
     except Exception as e:
         logger.error(f"Ошибка получения топа: {e}")
-        await message.answer("❌ Ошибка получения топа")
+        bot.reply_to(message, "❌ Ошибка получения топа")
 
-@dp.message(Command("userstat"))
-async def cmd_user_stat(message: Message):
+@bot.message_handler(commands=['userstat'])
+def cmd_user_stat(message):
     if not is_admin(message.from_user.id):
         return
     
     # Извлекаем username из команды
     args = message.text.split()
     if len(args) < 2:
-        await message.answer("❌ Укажите username: /userstat @username")
+        bot.reply_to(message, "❌ Укажите username: /userstat @username")
         return
     
     username = args[1].replace('@', '')
@@ -503,7 +557,7 @@ async def cmd_user_stat(message: Message):
         user_data = db.get_user_stats(username)
         
         if not user_data:
-            await message.answer(f"❌ Пользователь @{username} не найден или не имеет ссылок")
+            bot.reply_to(message, f"❌ Пользователь @{username} не найден или не имеет ссылок")
             return
         
         username, total_links, last_updated = user_data
@@ -526,14 +580,14 @@ async def cmd_user_stat(message: Message):
 🏆 Звание: {rank}
         """
         
-        await message.answer(stat_text)
+        bot.reply_to(message, stat_text)
         
     except Exception as e:
         logger.error(f"Ошибка получения статистики пользователя: {e}")
-        await message.answer("❌ Ошибка получения статистики пользователя")
+        bot.reply_to(message, "❌ Ошибка получения статистики пользователя")
 
-@dp.message(Command("setmessage"))
-async def cmd_set_message(message: Message):
+@bot.message_handler(commands=['setmessage'])
+def cmd_set_message(message):
     if not is_admin(message.from_user.id):
         return
     
@@ -541,41 +595,41 @@ async def cmd_set_message(message: Message):
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         current_text = db.get_reminder_text()
-        await message.answer(f"📝 Текущее сообщение:\n\n{current_text}\n\nДля изменения: /setmessage новый текст")
+        bot.reply_to(message, f"📝 Текущее сообщение:\n\n{current_text}\n\nДля изменения: /setmessage новый текст")
         return
     
     new_text = args[1]
     
     try:
         db.set_reminder_text(new_text)
-        await message.answer(f"✅ Текст напоминания обновлён:\n\n{new_text}")
+        bot.reply_to(message, f"✅ Текст напоминания обновлён:\n\n{new_text}")
         
     except Exception as e:
         logger.error(f"Ошибка обновления текста: {e}")
-        await message.answer("❌ Ошибка обновления текста")
+        bot.reply_to(message, "❌ Ошибка обновления текста")
 
-@dp.message(Command("clearhistory"))
-async def cmd_clear_history(message: Message):
+@bot.message_handler(commands=['clearhistory'])
+def cmd_clear_history(message):
     if not is_admin(message.from_user.id):
         return
     
     try:
         db.clear_link_history()
-        await message.answer("🧹 История ссылок очищена (общие счётчики сохранены)")
+        bot.reply_to(message, "🧹 История ссылок очищена (общие счётчики сохранены)")
         
     except Exception as e:
         logger.error(f"Ошибка очистки истории: {e}")
-        await message.answer("❌ Ошибка очистки истории")
+        bot.reply_to(message, "❌ Ошибка очистки истории")
 
-@dp.message(Command("test_regex"))
-async def cmd_test_regex(message: Message):
+@bot.message_handler(commands=['test_regex'])
+def cmd_test_regex(message):
     if not is_admin(message.from_user.id):
         return
     
     # Получаем текст для тестирования
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        await message.answer("🧪 Отправьте: /test_regex ваш текст со ссылками")
+        bot.reply_to(message, "🧪 Отправьте: /test_regex ваш текст со ссылками")
         return
     
     test_text = args[1]
@@ -591,12 +645,12 @@ async def cmd_test_regex(message: Message):
     else:
         result_text += "❌ Ссылки не найдены\n👎 Бот НЕ ответит на такое сообщение"
     
-    await message.answer(result_text)
+    bot.reply_to(message, result_text)
 
 # === ОСНОВНОЙ ОБРАБОТЧИК СООБЩЕНИЙ ===
 
-@dp.message(F.chat.id == GROUP_ID, F.message_thread_id == THREAD_ID)
-async def handle_topic_message(message: Message):
+@bot.message_handler(func=lambda message: message.chat.id == GROUP_ID and message.message_thread_id == THREAD_ID)
+def handle_topic_message(message):
     """Обработка сообщений в топике пресейвов"""
     
     # Игнорируем команды и сообщения от ботов
@@ -638,7 +692,7 @@ async def handle_topic_message(message: Message):
         reminder_text = db.get_reminder_text()
         
         # Отправляем ответ
-        success = await safe_send_message(
+        success = safe_send_message(
             chat_id=GROUP_ID,
             text=reminder_text,
             message_thread_id=THREAD_ID,
@@ -657,7 +711,9 @@ async def handle_topic_message(message: Message):
     except Exception as e:
         logger.error(f"Ошибка обработки сообщения: {e}")
 
-async def main():
+# === ЗАПУСК БОТА ===
+
+def main():
     """Основная функция запуска бота"""
     try:
         # Инициализация базы данных
@@ -669,12 +725,12 @@ async def main():
         logger.info(f"👑 Админы: {ADMIN_IDS}")
         
         # Запуск бота
-        await dp.start_polling(bot)
+        bot.infinity_polling(none_stop=True, interval=0)
         
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
     finally:
-        await bot.session.close()
+        logger.info("Бот остановлен")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
