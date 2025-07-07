@@ -9,7 +9,6 @@ from typing import Optional
 from aiogram import Bot, Dispatcher, F, types
 from aiogram.filters import Command
 from aiogram.types import Message
-import aiosqlite
 from dotenv import load_dotenv
 import os
 
@@ -47,11 +46,11 @@ class Database:
     def __init__(self, db_path: str = "bot.db"):
         self.db_path = db_path
     
-    async def init_db(self):
+    def init_db(self):
         """Инициализация базы данных"""
-        async with aiosqlite.connect(self.db_path) as db:
+        with sqlite3.connect(self.db_path) as db:
             # Таблица пользователей и их ссылок
-            await db.execute('''
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS user_links (
                     user_id INTEGER PRIMARY KEY,
                     username TEXT,
@@ -61,7 +60,7 @@ class Database:
             ''')
             
             # Детальная история ссылок
-            await db.execute('''
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS link_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
@@ -72,7 +71,7 @@ class Database:
             ''')
             
             # Логи ответов бота
-            await db.execute('''
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS bot_responses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     user_id INTEGER,
@@ -82,7 +81,7 @@ class Database:
             ''')
             
             # Настройки бота
-            await db.execute('''
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT
@@ -90,7 +89,7 @@ class Database:
             ''')
             
             # Активность бота
-            await db.execute('''
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS bot_activity (
                     id INTEGER PRIMARY KEY,
                     is_active BOOLEAN DEFAULT 1,
@@ -101,7 +100,7 @@ class Database:
             ''')
             
             # Лимиты и cooldown
-            await db.execute('''
+            db.execute('''
                 CREATE TABLE IF NOT EXISTS rate_limits (
                     id INTEGER PRIMARY KEY,
                     hourly_responses INTEGER DEFAULT 0,
@@ -111,64 +110,64 @@ class Database:
             ''')
             
             # Инициализация базовых записей
-            await db.execute('INSERT OR IGNORE INTO bot_activity (id, is_active) VALUES (1, 1)')
-            await db.execute('INSERT OR IGNORE INTO rate_limits (id) VALUES (1)')
-            await db.execute(
+            db.execute('INSERT OR IGNORE INTO bot_activity (id, is_active) VALUES (1, 1)')
+            db.execute('INSERT OR IGNORE INTO rate_limits (id) VALUES (1)')
+            db.execute(
                 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
                 ('reminder_text', DEFAULT_REMINDER)
             )
             
-            await db.commit()
+            db.commit()
             logger.info("База данных инициализирована")
 
-    async def add_user_links(self, user_id: int, username: str, links: list, message_id: int):
+    def add_user_links(self, user_id: int, username: str, links: list, message_id: int):
         """Добавление ссылок пользователя"""
-        async with aiosqlite.connect(self.db_path) as db:
+        with sqlite3.connect(self.db_path) as db:
             # Обновляем счётчик пользователя
-            await db.execute('''
+            db.execute('''
                 INSERT OR REPLACE INTO user_links (user_id, username, total_links, last_updated)
                 VALUES (?, ?, COALESCE((SELECT total_links FROM user_links WHERE user_id = ?), 0) + ?, CURRENT_TIMESTAMP)
             ''', (user_id, username, user_id, len(links)))
             
             # Добавляем детальную историю
             for link in links:
-                await db.execute('''
+                db.execute('''
                     INSERT INTO link_history (user_id, link_url, message_id)
                     VALUES (?, ?, ?)
                 ''', (user_id, link, message_id))
             
-            await db.commit()
+            db.commit()
 
-    async def log_bot_response(self, user_id: int, response_text: str):
+    def log_bot_response(self, user_id: int, response_text: str):
         """Логирование ответа бота"""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute('''
+        with sqlite3.connect(self.db_path) as db:
+            db.execute('''
                 INSERT INTO bot_responses (user_id, response_text)
                 VALUES (?, ?)
             ''', (user_id, response_text))
-            await db.commit()
+            db.commit()
 
-    async def is_bot_active(self) -> bool:
+    def is_bot_active(self) -> bool:
         """Проверка активности бота"""
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute('SELECT is_active FROM bot_activity WHERE id = 1')
-            result = await cursor.fetchone()
+        with sqlite3.connect(self.db_path) as db:
+            cursor = db.execute('SELECT is_active FROM bot_activity WHERE id = 1')
+            result = cursor.fetchone()
             return bool(result[0]) if result else False
 
-    async def set_bot_active(self, active: bool):
+    def set_bot_active(self, active: bool):
         """Установка статуса активности"""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute('UPDATE bot_activity SET is_active = ? WHERE id = 1', (active,))
-            await db.commit()
+        with sqlite3.connect(self.db_path) as db:
+            db.execute('UPDATE bot_activity SET is_active = ? WHERE id = 1', (active,))
+            db.commit()
 
-    async def can_send_response(self) -> tuple[bool, str]:
+    def can_send_response(self) -> tuple[bool, str]:
         """Проверка возможности отправки ответа с учетом лимитов"""
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute('''
+        with sqlite3.connect(self.db_path) as db:
+            cursor = db.execute('''
                 SELECT hourly_responses, last_hour_reset, cooldown_until
                 FROM rate_limits WHERE id = 1
             ''')
-            result = await cursor.fetchone()
+            result = cursor.fetchone()
             
             if not result:
                 return False, "Ошибка получения лимитов"
@@ -187,7 +186,7 @@ class Database:
             if last_hour_reset:
                 last_reset = datetime.fromisoformat(last_hour_reset)
                 if now - last_reset > timedelta(hours=1):
-                    await db.execute('''
+                    db.execute('''
                         UPDATE rate_limits 
                         SET hourly_responses = 0, last_hour_reset = ?
                         WHERE id = 1
@@ -200,64 +199,64 @@ class Database:
             
             return True, "OK"
 
-    async def update_response_limits(self):
+    def update_response_limits(self):
         """Обновление лимитов после отправки ответа"""
-        async with aiosqlite.connect(self.db_path) as db:
+        with sqlite3.connect(self.db_path) as db:
             now = datetime.now()
             cooldown_until = now + timedelta(seconds=MIN_COOLDOWN_SECONDS)
             
-            await db.execute('''
+            db.execute('''
                 UPDATE rate_limits 
                 SET hourly_responses = hourly_responses + 1,
                     cooldown_until = ?
                 WHERE id = 1
             ''', (cooldown_until.isoformat(),))
             
-            await db.commit()
+            db.commit()
 
-    async def get_user_stats(self, username: str = None):
+    def get_user_stats(self, username: str = None):
         """Получение статистики пользователей"""
-        async with aiosqlite.connect(self.db_path) as db:
+        with sqlite3.connect(self.db_path) as db:
             if username:
                 # Статистика конкретного пользователя
-                cursor = await db.execute('''
+                cursor = db.execute('''
                     SELECT username, total_links, last_updated
                     FROM user_links 
                     WHERE username = ? AND total_links > 0
                 ''', (username.replace('@', ''),))
-                result = await cursor.fetchone()
+                result = cursor.fetchone()
                 return result
             else:
                 # Общая статистика
-                cursor = await db.execute('''
+                cursor = db.execute('''
                     SELECT username, total_links, last_updated
                     FROM user_links 
                     WHERE total_links > 0
                     ORDER BY total_links DESC
                 ''')
-                return await cursor.fetchall()
+                return cursor.fetchall()
 
-    async def get_bot_stats(self):
+    def get_bot_stats(self):
         """Статистика работы бота"""
-        async with aiosqlite.connect(self.db_path) as db:
+        with sqlite3.connect(self.db_path) as db:
             # Получаем лимиты
-            cursor = await db.execute('''
+            cursor = db.execute('''
                 SELECT hourly_responses, cooldown_until FROM rate_limits WHERE id = 1
             ''')
-            limits = await cursor.fetchone()
+            limits = cursor.fetchone()
             
             # Получаем активность
-            cursor = await db.execute('''
+            cursor = db.execute('''
                 SELECT is_active, last_response_time FROM bot_activity WHERE id = 1
             ''')
-            activity = await cursor.fetchone()
+            activity = cursor.fetchone()
             
             # Считаем ответы за сегодня
-            cursor = await db.execute('''
+            cursor = db.execute('''
                 SELECT COUNT(*) FROM bot_responses 
                 WHERE DATE(timestamp) = DATE('now')
             ''')
-            today_responses = await cursor.fetchone()
+            today_responses = cursor.fetchone()
             
             return {
                 'hourly_responses': limits[0] if limits else 0,
@@ -268,26 +267,26 @@ class Database:
                 'today_responses': today_responses[0] if today_responses else 0
             }
 
-    async def clear_link_history(self):
+    def clear_link_history(self):
         """Очистка истории ссылок (счётчики остаются)"""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute('DELETE FROM link_history')
-            await db.commit()
+        with sqlite3.connect(self.db_path) as db:
+            db.execute('DELETE FROM link_history')
+            db.commit()
 
-    async def get_reminder_text(self) -> str:
+    def get_reminder_text(self) -> str:
         """Получение текста напоминания"""
-        async with aiosqlite.connect(self.db_path) as db:
-            cursor = await db.execute('SELECT value FROM settings WHERE key = ?', ('reminder_text',))
-            result = await cursor.fetchone()
+        with sqlite3.connect(self.db_path) as db:
+            cursor = db.execute('SELECT value FROM settings WHERE key = ?', ('reminder_text',))
+            result = cursor.fetchone()
             return result[0] if result else DEFAULT_REMINDER
 
-    async def set_reminder_text(self, text: str):
+    def set_reminder_text(self, text: str):
         """Установка текста напоминания"""
-        async with aiosqlite.connect(self.db_path) as db:
-            await db.execute('''
+        with sqlite3.connect(self.db_path) as db:
+            db.execute('''
                 INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
             ''', ('reminder_text', text))
-            await db.commit()
+            db.commit()
 
 # Инициализация базы данных
 db = Database()
@@ -366,7 +365,7 @@ async def cmd_activate(message: Message):
         await message.answer("❌ Команда должна выполняться в топике пресейвов")
         return
     
-    await db.set_bot_active(True)
+    db.set_bot_active(True)
     
     welcome_text = """
 🤖 Привет! Я бот для напоминаний о пресейвах!
@@ -387,7 +386,7 @@ async def cmd_deactivate(message: Message):
     if not is_admin(message.from_user.id):
         return
     
-    await db.set_bot_active(False)
+    db.set_bot_active(False)
     await message.answer("🛑 Бот деактивирован. Для включения используйте /activate")
     logger.info(f"Бот деактивирован пользователем {message.from_user.id}")
 
@@ -397,7 +396,7 @@ async def cmd_bot_stat(message: Message):
         return
     
     try:
-        stats = await db.get_bot_stats()
+        stats = db.get_bot_stats()
         
         # Расчёт времени до следующего ответа
         cooldown_text = "Готов к ответу"
@@ -434,7 +433,7 @@ async def cmd_link_stats(message: Message):
         return
     
     try:
-        users = await db.get_user_stats()
+        users = db.get_user_stats()
         
         if not users:
             await message.answer("📊 Пока нет пользователей с ссылками")
@@ -467,7 +466,7 @@ async def cmd_top_users(message: Message):
         return
     
     try:
-        users = await db.get_user_stats()
+        users = db.get_user_stats()
         
         if not users:
             await message.answer("🏆 Пока нет активных пользователей")
@@ -501,7 +500,7 @@ async def cmd_user_stat(message: Message):
     username = args[1].replace('@', '')
     
     try:
-        user_data = await db.get_user_stats(username)
+        user_data = db.get_user_stats(username)
         
         if not user_data:
             await message.answer(f"❌ Пользователь @{username} не найден или не имеет ссылок")
@@ -541,14 +540,14 @@ async def cmd_set_message(message: Message):
     # Извлекаем новый текст
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
-        current_text = await db.get_reminder_text()
+        current_text = db.get_reminder_text()
         await message.answer(f"📝 Текущее сообщение:\n\n{current_text}\n\nДля изменения: /setmessage новый текст")
         return
     
     new_text = args[1]
     
     try:
-        await db.set_reminder_text(new_text)
+        db.set_reminder_text(new_text)
         await message.answer(f"✅ Текст напоминания обновлён:\n\n{new_text}")
         
     except Exception as e:
@@ -561,7 +560,7 @@ async def cmd_clear_history(message: Message):
         return
     
     try:
-        await db.clear_link_history()
+        db.clear_link_history()
         await message.answer("🧹 История ссылок очищена (общие счётчики сохранены)")
         
     except Exception as e:
@@ -608,7 +607,7 @@ async def handle_topic_message(message: Message):
         return
     
     # Проверяем активность бота
-    if not await db.is_bot_active():
+    if not db.is_bot_active():
         return
     
     # Извлекаем ссылки из сообщения
@@ -619,7 +618,7 @@ async def handle_topic_message(message: Message):
         return  # Нет ссылок - не отвечаем
     
     # Проверяем лимиты
-    can_respond, reason = await db.can_send_response()
+    can_respond, reason = db.can_send_response()
     
     if not can_respond:
         logger.warning(f"Ответ заблокирован: {reason}")
@@ -628,7 +627,7 @@ async def handle_topic_message(message: Message):
     try:
         # Сохраняем ссылки в базу
         username = message.from_user.username or f"user_{message.from_user.id}"
-        await db.add_user_links(
+        db.add_user_links(
             user_id=message.from_user.id,
             username=username,
             links=links,
@@ -636,7 +635,7 @@ async def handle_topic_message(message: Message):
         )
         
         # Получаем текст напоминания
-        reminder_text = await db.get_reminder_text()
+        reminder_text = db.get_reminder_text()
         
         # Отправляем ответ
         success = await safe_send_message(
@@ -648,10 +647,10 @@ async def handle_topic_message(message: Message):
         
         if success:
             # Обновляем лимиты
-            await db.update_response_limits()
+            db.update_response_limits()
             
             # Логируем ответ
-            await db.log_bot_response(message.from_user.id, reminder_text)
+            db.log_bot_response(message.from_user.id, reminder_text)
             
             logger.info(f"Ответ отправлен пользователю {username} ({len(links)} ссылок)")
         
@@ -662,7 +661,7 @@ async def main():
     """Основная функция запуска бота"""
     try:
         # Инициализация базы данных
-        await db.init_db()
+        db.init_db()
         
         logger.info("🤖 Presave Reminder Bot запущен и готов к работе!")
         logger.info(f"👥 Группа: {GROUP_ID}")
