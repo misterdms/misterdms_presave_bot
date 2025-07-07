@@ -751,16 +751,34 @@ def main():
         health_thread = threading.Thread(target=start_health_server, daemon=True)
         health_thread.start()
         
+        # КРИТИЧЕСКИ ВАЖНО: Очищаем webhook перед запуском polling
+        try:
+            bot.remove_webhook()
+            logger.info("✅ Webhook очищен")
+            time.sleep(2)  # Даем время Telegram API обработать
+        except Exception as e:
+            logger.warning(f"Предупреждение при очистке webhook: {e}")
+        
         logger.info("🤖 Presave Reminder Bot запущен и готов к работе!")
         logger.info(f"👥 Группа: {GROUP_ID}")
         logger.info(f"📋 Топик: {THREAD_ID}")
         logger.info(f"👑 Админы: {ADMIN_IDS}")
         
-        # Запуск бота
-        bot.infinity_polling(none_stop=True, interval=0)
+        # Запуск бота с обработкой ошибок
+        bot.infinity_polling(
+            none_stop=True, 
+            interval=0,
+            allowed_updates=['message', 'callback_query'],
+            restart_on_change=False
+        )
         
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
+        # Пытаемся очистить webhook при крэше
+        try:
+            bot.remove_webhook()
+        except:
+            pass
     finally:
         logger.info("Бот остановлен")
 
