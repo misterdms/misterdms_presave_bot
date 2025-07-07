@@ -50,6 +50,8 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+print("🚀 WEBHOOK VERSION - NO POLLING!")  # Индикатор что это webhook версия
+
 class Database:
     def __init__(self, db_path: str = "bot.db"):
         self.db_path = db_path
