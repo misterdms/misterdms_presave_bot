@@ -25,49 +25,9 @@ THREAD_ID = int(os.getenv('THREAD_ID'))  # 10
 ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '').split(',') if x]
 DEFAULT_REMINDER = os.getenv('REMINDER_TEXT', '🎧 Напоминаем: не забудьте сделать пресейв артистов выше! ♥️')
 
-# === НОВАЯ СИСТЕМА РЕЖИМОВ ЛИМИТОВ ===
-
-# Определение режимов работы
-RATE_LIMIT_MODES = {
-    'conservative': {
-        'name': '🟢 CONSERVATIVE',
-        'description': 'Черепаший режим - максимальная безопасность',
-        'max_responses_per_hour': 20,
-        'min_cooldown_seconds': 20,
-        'emoji': '🐢',
-        'risk': 'Минимальный'
-    },
-    'normal': {
-        'name': '🟡 NORMAL', 
-        'description': 'Сбалансированный режим для ежедневной работы',
-        'max_responses_per_hour': 30,
-        'min_cooldown_seconds': 15,
-        'emoji': '⚖️',
-        'risk': 'Низкий'
-    },
-    'burst': {
-        'name': '🟠 BURST',
-        'description': 'Режим настройки - идём по лезвию бритвы!',
-        'max_responses_per_hour': 120,
-        'min_cooldown_seconds': 5,
-        'emoji': '⚡',
-        'risk': 'Высокий'
-    },
-    'admin_burst': {
-        'name': '🔴 ADMIN_BURST',
-        'description': 'Режим дебага - максимально близко к лимитам Telegram!',
-        'max_responses_per_hour': 300,
-        'min_cooldown_seconds': 2,
-        'emoji': '🚨',
-        'risk': 'ЭКСТРЕМАЛЬНЫЙ',
-        'admin_only': True
-    }
-}
-
-# Текущий режим (будет загружен из базы данных при инициализации)
-CURRENT_MODE = 'conservative'  # Временное значение до загрузки из БД
-
-# Остальные константы безопасности
+# Константы безопасности
+MAX_RESPONSES_PER_HOUR = 10
+MIN_COOLDOWN_SECONDS = 30
 BATCH_RESPONSE_WINDOW = 300  # 5 минут
 RESPONSE_DELAY = 3
 
@@ -89,56 +49,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# === ФУНКЦИИ УПРАВЛЕНИЯ РЕЖИМАМИ ===
-
-def get_current_limits():
-    """Получение текущих лимитов на основе активного режима"""
-    current_mode = db.get_current_rate_mode()
-    mode_config = RATE_LIMIT_MODES[current_mode]
-    return {
-        'max_responses_per_hour': mode_config['max_responses_per_hour'],
-        'min_cooldown_seconds': mode_config['min_cooldown_seconds'],
-        'mode_name': mode_config['name'],
-        'mode_emoji': mode_config['emoji']
-    }
-
-def set_rate_limit_mode(new_mode: str, user_id: int) -> tuple[bool, str]:
-    """Установка нового режима лимитов"""
-    if new_mode not in RATE_LIMIT_MODES:
-        return False, f"❌ Неизвестный режим: {new_mode}"
-    
-    mode_config = RATE_LIMIT_MODES[new_mode]
-    
-    # Проверка админских прав для admin_burst
-    if mode_config.get('admin_only', False) and not is_admin(user_id):
-        return False, f"❌ Режим {mode_config['name']} доступен только администраторам"
-    
-    old_mode = db.get_current_rate_mode()
-    old_config = RATE_LIMIT_MODES[old_mode]
-    
-    # Сохраняем новый режим в базу данных
-    db.set_current_rate_mode(new_mode)
-    
-    # Сброс текущих лимитов при смене режима
-    db.reset_rate_limits()
-    
-    change_text = f"""
-🔄 Режим лимитов изменён!
-
-📉 Было: {old_config['name']}
-• Ответов/час: {old_config['max_responses_per_hour']}
-• Cooldown: {old_config['min_cooldown_seconds']} сек
-
-📈 Стало: {mode_config['name']}
-• Ответов/час: {mode_config['max_responses_per_hour']}
-• Cooldown: {mode_config['min_cooldown_seconds']} сек
-
-⚠️ Уровень риска: {mode_config['risk']}
-    """
-    
-    logger.info(f"🔄 RATE_MODE: Changed from {old_mode} to {new_mode} by user {user_id}")
-    return True, change_text
 
 class Database:
     def __init__(self, db_path: str = "bot.db"):
@@ -218,11 +128,6 @@ class Database:
                 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
                 ('reminder_text', DEFAULT_REMINDER)
             )
-            # Инициализация режима лимитов
-            cursor.execute(
-                'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
-                ('rate_limit_mode', 'conservative')
-            )
             
             conn.commit()
             conn.close()
@@ -282,7 +187,7 @@ class Database:
             conn.close()
 
     def can_send_response(self) -> tuple[bool, str]:
-        """Обновленная проверка лимитов с учетом режимов"""
+        """Проверка возможности отправки ответа с учетом лимитов"""
         with self.lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -299,18 +204,13 @@ class Database:
             hourly_responses, last_hour_reset, cooldown_until = result
             now = datetime.now()
             
-            # Получаем текущие лимиты из активного режима
-            current_limits = get_current_limits()
-            max_responses = current_limits['max_responses_per_hour'] 
-            cooldown_seconds = current_limits['min_cooldown_seconds']
-            
             # Проверяем cooldown
             if cooldown_until:
                 cooldown_time = datetime.fromisoformat(cooldown_until)
                 if now < cooldown_time:
                     remaining = int((cooldown_time - now).total_seconds())
                     conn.close()
-                    return False, f"Cooldown активен. Осталось: {remaining} сек (режим: {current_limits['mode_name']})"
+                    return False, f"Cooldown активен. Осталось: {remaining} сек"
             
             # Сброс почасового счётчика
             if last_hour_reset:
@@ -324,24 +224,20 @@ class Database:
                     hourly_responses = 0
             
             # Проверяем почасовой лимит
-            if hourly_responses >= max_responses:
+            if hourly_responses >= MAX_RESPONSES_PER_HOUR:
                 conn.close()
-                return False, f"Достигнут лимит {max_responses} ответов в час (режим: {current_limits['mode_name']})"
+                return False, f"Достигнут лимит {MAX_RESPONSES_PER_HOUR} ответов в час"
             
             conn.close()
             return True, "OK"
 
     def update_response_limits(self):
-        """Обновленная функция обновления лимитов"""
+        """Обновление лимитов после отправки ответа"""
         with self.lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
             now = datetime.now()
-            
-            # Получаем cooldown из текущего режима
-            current_limits = get_current_limits()
-            cooldown_seconds = current_limits['min_cooldown_seconds']
-            cooldown_until = now + timedelta(seconds=cooldown_seconds)
+            cooldown_until = now + timedelta(seconds=MIN_COOLDOWN_SECONDS)
             
             cursor.execute('''
                 UPDATE rate_limits 
@@ -352,22 +248,6 @@ class Database:
             
             conn.commit()
             conn.close()
-
-    def reset_rate_limits(self):
-        """Сброс лимитов при смене режима"""
-        with self.lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                UPDATE rate_limits 
-                SET hourly_responses = 0,
-                    cooldown_until = NULL,
-                    last_hour_reset = ?
-                WHERE id = 1
-            ''', (datetime.now().isoformat(),))
-            conn.commit()
-            conn.close()
-            logger.info("🔄 RATE_RESET: Rate limits reset due to mode change")
 
     def get_user_stats(self, username: str = None):
         """Получение статистики пользователей"""
@@ -398,7 +278,7 @@ class Database:
                 return result
 
     def get_bot_stats(self):
-        """Статистика работы бота с учетом динамических лимитов"""
+        """Статистика работы бота"""
         with self.lock:
             conn = sqlite3.connect(self.db_path)
             cursor = conn.cursor()
@@ -424,12 +304,9 @@ class Database:
             
             conn.close()
             
-            # Получаем лимиты из текущего режима
-            current_limits = get_current_limits()
-            
             return {
                 'hourly_responses': limits[0] if limits else 0,
-                'hourly_limit': current_limits['max_responses_per_hour'],
+                'hourly_limit': MAX_RESPONSES_PER_HOUR,
                 'cooldown_until': limits[1] if limits else None,
                 'is_active': bool(activity[0]) if activity else False,
                 'last_response': activity[1] if activity else None,
@@ -465,28 +342,6 @@ class Database:
             ''', ('reminder_text', text))
             conn.commit()
             conn.close()
-
-    def get_current_rate_mode(self) -> str:
-        """Получение текущего режима лимитов"""
-        with self.lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('SELECT value FROM settings WHERE key = ?', ('rate_limit_mode',))
-            result = cursor.fetchone()
-            conn.close()
-            return result[0] if result else 'conservative'
-
-    def set_current_rate_mode(self, mode: str):
-        """Установка текущего режима лимитов"""
-        with self.lock:
-            conn = sqlite3.connect(self.db_path)
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
-            ''', ('rate_limit_mode', mode))
-            conn.commit()
-            conn.close()
-            logger.info(f"🎛️ RATE_MODE: Saved mode '{mode}' to database")
 
 # Инициализация базы данных
 db = Database()
@@ -725,124 +580,16 @@ def cmd_help(message):
 /setmessage текст — изменить текст напоминания
 /clearhistory — очистить историю ссылок (счётчики сохраняются)
 /botstat — мониторинг активности и лимитов бота
-
-🎛️ Управление лимитами: 
-/modes — показать все режимы лимитов
-/setmode <режим> — переключить режим (conservative/normal/burst/admin_burst)
-/currentmode — текущий режим и использование лимитов
-
-🔧 Диагностика:
 /test_regex — тестировать распознавание ссылок
 /alllinks — показать все ссылки в базе
 /recent — показать последние 10 ссылок
 
 ℹ️ Бот автоматически отвечает на сообщения со ссылками в топике пресейвов
-🛡️ Система динамических лимитов с 4 режимами безопасности
+🛡️ Защита от спама: максимум 10 ответов в час, пауза 30 сек между ответами
     """
     
     logger.info(f"✅ HELP command processed for admin {message.from_user.id}")
     bot.reply_to(message, help_text)
-
-@bot.message_handler(commands=['modes'])
-def cmd_modes(message):
-    """Показать все доступные режимы"""
-    logger.info(f"🔍 MODES command received from user {message.from_user.id}")
-    
-    if not is_admin(message.from_user.id):
-        logger.warning(f"❌ MODES command denied - user {message.from_user.id} not admin")
-        return
-    
-    modes_text = "🎛️ Доступные режимы лимитов:\n\n"
-    
-    for mode_key, mode_config in RATE_LIMIT_MODES.items():
-        is_current = "✅ " if mode_key == db.get_current_rate_mode() else "   "
-        admin_mark = " 👑" if mode_config.get('admin_only', False) else ""
-        
-        modes_text += f"{is_current}{mode_config['emoji']} **{mode_config['name']}**{admin_mark}\n"
-        modes_text += f"   📝 {mode_config['description']}\n"
-        modes_text += f"   📊 {mode_config['max_responses_per_hour']} ответов/час, {mode_config['min_cooldown_seconds']}с cooldown\n"
-        modes_text += f"   ⚠️ Риск: {mode_config['risk']}\n\n"
-    
-    modes_text += "🔄 Переключение: `/setmode <название>`\n"
-    modes_text += "📋 Доступные названия: conservative, normal, burst, admin_burst"
-    
-    bot.reply_to(message, modes_text, parse_mode='Markdown')
-    logger.info(f"✅ MODES command response sent")
-
-@bot.message_handler(commands=['setmode'])
-def cmd_set_mode(message):
-    """Установка режима лимитов"""
-    logger.info(f"🔍 SETMODE command received from user {message.from_user.id}")
-    
-    if not is_admin(message.from_user.id):
-        logger.warning(f"❌ SETMODE command denied - user {message.from_user.id} not admin")
-        return
-    
-    # Извлекаем режим из команды
-    args = message.text.split()
-    if len(args) < 2:
-        current_limits = get_current_limits()
-        current_text = f"""
-🎛️ Текущий режим: {current_limits['mode_name']}
-
-📊 Активные лимиты:
-• Ответов в час: {current_limits['max_responses_per_hour']}
-• Cooldown: {current_limits['min_cooldown_seconds']} секунд
-
-🔄 Для смены режима: `/setmode <режим>`
-📋 Посмотреть все режимы: `/modes`
-        """
-        bot.reply_to(message, current_text)
-        return
-    
-    new_mode = args[1].lower()
-    logger.info(f"🔄 SETMODE attempting to set mode: {new_mode}")
-    
-    success, result_text = set_rate_limit_mode(new_mode, message.from_user.id)
-    
-    if success:
-        logger.info(f"✅ SETMODE successfully changed to {new_mode}")
-    else:
-        logger.warning(f"❌ SETMODE failed: {result_text}")
-    
-    bot.reply_to(message, result_text)
-
-@bot.message_handler(commands=['currentmode'])
-def cmd_current_mode(message):
-    """Показать текущий режим и лимиты"""
-    logger.info(f"🔍 CURRENTMODE command received from user {message.from_user.id}")
-    
-    if not is_admin(message.from_user.id):
-        logger.warning(f"❌ CURRENTMODE command denied - user {message.from_user.id} not admin")
-        return
-    
-    current_limits = get_current_limits()
-    mode_config = RATE_LIMIT_MODES[db.get_current_rate_mode()]
-    
-    # Получаем текущее использование лимитов
-    bot_stats = db.get_bot_stats()
-    
-    current_text = f"""
-🎛️ Текущий режим лимитов:
-
-{mode_config['emoji']} **{mode_config['name']}**
-📝 {mode_config['description']}
-
-📊 Лимиты режима:
-• Максимум ответов/час: {mode_config['max_responses_per_hour']}
-• Cooldown между ответами: {mode_config['min_cooldown_seconds']} сек
-• Уровень риска: {mode_config['risk']}
-
-📈 Текущее использование:
-• Использовано в этом часу: {bot_stats['hourly_responses']}/{mode_config['max_responses_per_hour']}
-• Ответов за сегодня: {bot_stats['today_responses']}
-
-🔄 Сменить режим: `/setmode <режим>`
-📋 Все режимы: `/modes`
-    """
-    
-    bot.reply_to(message, current_text, parse_mode='Markdown')
-    logger.info(f"✅ CURRENTMODE command response sent")
 
 @bot.message_handler(commands=['stats'])
 def cmd_stats(message):
@@ -895,10 +642,6 @@ def cmd_stats(message):
         status_emoji = "🟢" if bot_stats['is_active'] else "🔴"
         status_text = "Активен" if bot_stats['is_active'] else "Отключен"
         
-        # Получаем информацию о текущем режиме
-        current_limits = get_current_limits()
-        current_mode = db.get_current_rate_mode()
-        
         stats_text = f"""
 📊 Общая статистика бота:
 
@@ -913,7 +656,7 @@ def cmd_stats(message):
 📈 За неделю:
 • Ссылок: {week_links}
 
-⚡ Лимиты ({current_limits['mode_emoji']} {current_mode.upper()}):
+⚡ Лимиты:
 • Ответов в час: {bot_stats['hourly_responses']}/{bot_stats['hourly_limit']}
 
 🏆 Лидер: {f"@{top_user[0]} ({top_user[1]} ссылок)" if top_user else "пока нет"}
@@ -1056,15 +799,11 @@ def cmd_activate(message):
     logger.info(f"✅ ACTIVATE command in correct topic, processing...")
     db.set_bot_active(True)
     
-    # Получаем текущий режим для отображения
-    current_limits = get_current_limits()
-    
-    welcome_text = f"""
+    welcome_text = """
 🤖 Привет! Я бот для напоминаний о пресейвах!
 
 ✅ Активирован в топике "Пресейвы"
 🎯 Буду отвечать на сообщения со ссылками
-{current_limits['mode_emoji']} Режим: {CURRENT_MODE.upper()} ({current_limits['max_responses_per_hour']}/час, {current_limits['min_cooldown_seconds']}с cooldown)
 ⚙️ Управление: /help
 🛑 Отключить: /deactivate
 
@@ -1096,7 +835,6 @@ def cmd_bot_stat(message):
     
     try:
         stats = db.get_bot_stats()
-        current_limits = get_current_limits()
         
         # Расчёт времени до следующего ответа
         cooldown_text = "Готов к ответу"
@@ -1114,13 +852,12 @@ def cmd_bot_stat(message):
 🤖 Статистика бота за сегодня:
 
 {status_emoji} Статус: {status_text}
-{current_limits['mode_emoji']} Режим: {CURRENT_MODE.upper()}
 ⚡ Ответов в час: {stats['hourly_responses']}/{stats['hourly_limit']}
 📊 Ответов за сегодня: {stats['today_responses']}
 ⏱️ {cooldown_text}
 🔗 Webhook: активен
 
-⚠️ Предупреждений: {'🟡 Приближение к лимиту' if stats['hourly_responses'] >= (stats['hourly_limit'] * 0.8) else '✅ Всё в порядке'}
+⚠️ Предупреждений: {'🟡 Приближение к лимиту' if stats['hourly_responses'] >= 8 else '✅ Всё в порядке'}
         """
         
         logger.info(f"✅ BOTSTAT command processed for user {message.from_user.id}")
@@ -1378,15 +1115,6 @@ def handle_tagged_commands(message):
     elif clean_command == '/deactivate':
         logger.info(f"🔄 REDIRECT: Redirecting to cmd_deactivate")
         cmd_deactivate(message)
-    elif clean_command == '/modes':
-        logger.info(f"🔄 REDIRECT: Redirecting to cmd_modes")
-        cmd_modes(message)
-    elif clean_command == '/setmode':
-        logger.info(f"🔄 REDIRECT: Redirecting to cmd_set_mode")
-        cmd_set_mode(message)
-    elif clean_command == '/currentmode':
-        logger.info(f"🔄 REDIRECT: Redirecting to cmd_current_mode")
-        cmd_current_mode(message)
     else:
         logger.warning(f"❓ UNKNOWN: Unknown tagged command: '{clean_command}'")
 
@@ -1457,7 +1185,7 @@ def handle_topic_message(message):
         logger.info(f"⏭️ NO_LINKS: No links found, skipping response")
         return  # Нет ссылок - не отвечаем
     
-    # Проверяем лимиты (теперь с учетом динамических режимов)
+    # Проверяем лимиты
     can_respond, reason = db.can_send_response()
     logger.info(f"🚦 RATE_LIMIT: Can respond: {can_respond}, reason: '{reason}'")
     
@@ -1494,7 +1222,7 @@ def handle_topic_message(message):
         if success:
             logger.info(f"✅ SENT: Response sent successfully")
             
-            # Обновляем лимиты (теперь с учетом текущего режима)
+            # Обновляем лимиты
             db.update_response_limits()
             logger.info(f"📊 LIMITS: Rate limits updated")
             
@@ -1535,7 +1263,6 @@ def main():
         logger.info("🚀 STARTUP: Starting Presave Reminder Bot")
         logger.info(f"🔧 CONFIG: GROUP_ID={GROUP_ID}, THREAD_ID={THREAD_ID}, ADMIN_IDS={ADMIN_IDS}")
         logger.info(f"🌐 WEBHOOK: WEBHOOK_HOST={WEBHOOK_HOST}, WEBHOOK_PORT={WEBHOOK_PORT}")
-        logger.info(f"🎛️ RATE_LIMITS: Starting in {CURRENT_MODE.upper()} mode")
         
         # Инициализация базы данных
         logger.info("💾 DATABASE: Initializing database")
@@ -1546,10 +1273,6 @@ def main():
         logger.info(f"👥 Группа: {GROUP_ID}")
         logger.info(f"📋 Топик: {THREAD_ID}")
         logger.info(f"👑 Админы: {ADMIN_IDS}")
-        
-        # Показываем текущий режим
-        current_limits = get_current_limits()
-        logger.info(f"🎛️ РЕЖИМ: {current_limits['mode_name']} ({current_limits['max_responses_per_hour']}/час, {current_limits['min_cooldown_seconds']}с cooldown)")
         
         # Настройка webhook
         logger.info("🔧 WEBHOOK: Setting up webhook")
