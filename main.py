@@ -1,6 +1,6 @@
-# Current version: v21
+# Current version: v21-fixed
 # Presave Reminder Bot - Версия с исправлениями безопасности и критических багов
-# Основано на стабильной v20, добавлены критические исправления
+# Основано на стабильной v20, добавлены критические исправления + фикс webhook security для production
 
 import logging
 import re
@@ -183,24 +183,26 @@ class SecurityValidator:
     
     @staticmethod
     def verify_telegram_request(headers: dict, content_length: int) -> bool:
-        """Проверка подлинности webhook от Telegram"""
-        # Проверка User-Agent
-        user_agent = headers.get('User-Agent', '')
-        if not user_agent.startswith('TelegramBot'):
-            logger.warning(f"🚨 SECURITY: Invalid User-Agent: {user_agent}")
-            return False
+        """Проверка подлинности webhook от Telegram - ИСПРАВЛЕНО для production"""
         
-        # Проверка размера
+        # Проверка размера (критично)
         if content_length > 1024 * 1024:  # 1MB лимит
             logger.warning(f"🚨 SECURITY: Payload too large: {content_length}")
             return False
         
-        # Проверка secret token (если установлен)
+        # Проверка secret token (если установлен) - основная защита
         if WEBHOOK_SECRET:
             received_token = headers.get('X-Telegram-Bot-Api-Secret-Token')
             if received_token != WEBHOOK_SECRET:
                 logger.warning(f"🚨 SECURITY: Invalid webhook secret")
                 return False
+        
+        # Логируем User-Agent для диагностики, но НЕ блокируем
+        user_agent = headers.get('User-Agent', 'Not provided')
+        logger.info(f"🔍 WEBHOOK_UA: User-Agent: {user_agent}")
+        
+        # В production Telegram может использовать разные User-Agent'ы или прокси
+        # Поэтому полагаемся на secret token и размер payload
         
         return True
 
@@ -726,7 +728,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             response = json.dumps({
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "version": "v21",
+                "version": "v21-fixed",
                 "security": "enhanced",
                 "features": ["webhook_security", "connection_pooling", "keep_alive"]
             })
@@ -749,7 +751,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 response = json.dumps({
                     "status": "alive",
                     "timestamp": time.time(),
-                    "version": "v21",
+                    "version": "v21-fixed",
                     "bot_active": bot_active,
                     "current_mode": current_limits['mode_name'],
                     "uptime_check": "✅ OK"
@@ -776,7 +778,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             response = json.dumps({
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "version": "v21"
+                "version": "v21-fixed"
             })
             self.wfile.write(response.encode())
         
@@ -797,7 +799,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
                     "status": "alive",
                     "method": "GET",
                     "timestamp": time.time(),
-                    "version": "v21",
+                    "version": "v21-fixed",
                     "bot_active": bot_active,
                     "current_mode": current_limits['mode_name'],
                     "uptime_check": "✅ OK"
@@ -821,7 +823,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Presave Reminder Bot v21 - Webhook</title>
+                <title>Presave Reminder Bot v21-fixed - Webhook</title>
                 <meta charset="utf-8">
                 <style>
                     body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
@@ -832,19 +834,19 @@ class WebhookHandler(BaseHTTPRequestHandler):
             </head>
             <body>
                 <div class="header">
-                    <h1>🤖 Presave Reminder Bot v21</h1>
+                    <h1>🤖 Presave Reminder Bot v21-fixed</h1>
                     <h2>Enhanced Security Webhook</h2>
                 </div>
                 
                 <div class="status">
                     <h3>✅ Status: Active & Secured</h3>
-                    <p>Stabilized version with security fixes</p>
+                    <p>Production-ready version with fixed webhook security</p>
                 </div>
                 
                 <div class="feature">
                     <h4>🔐 Security Features</h4>
                     <ul>
-                        <li>Telegram signature verification</li>
+                        <li>Flexible webhook validation for production</li>
                         <li>Rate limiting protection</li>
                         <li>SQL injection prevention</li>
                         <li>Connection pooling</li>
@@ -857,7 +859,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
                         <li>Fixed division by zero in currentmode</li>
                         <li>Enhanced error handling</li>
                         <li>Database connection stability</li>
-                        <li>Memory leak prevention</li>
+                        <li>Production webhook compatibility</li>
                     </ul>
                 </div>
             </body>
@@ -879,11 +881,11 @@ def cmd_start(message):
         return
     
     bot.reply_to(message, """
-🤖 Presave Reminder Bot v21 запущен!
+🤖 Presave Reminder Bot v21-fixed запущен!
 
-🔧 Исправления v21:
+🔧 Исправления v21-fixed:
 ✅ Фикс деления на ноль в /currentmode
-✅ Улучшенная безопасность webhook
+✅ Улучшенная безопасность webhook для production
 ✅ Connection pooling для БД
 ✅ Защита от SQL injection
 
@@ -929,9 +931,9 @@ def cmd_help(message):
 /alllinks — все ссылки
 /recent — последние ссылки
 
-🆕 v21 исправления:
+🆕 v21-fixed исправления:
 ✅ Исправлены краши команд
-✅ Безопасность webhook
+✅ Безопасность webhook для production
 ✅ Connection pooling
 ✅ Защита от SQL injection
     """
@@ -946,7 +948,7 @@ def cmd_modes(message):
     
     reload_rate_limit_modes()
     
-    modes_text = "🎛️ Доступные режимы лимитов (v21):\n\n"
+    modes_text = "🎛️ Доступные режимы лимитов (v21-fixed):\n\n"
     
     for mode_key, mode_config in RATE_LIMIT_MODES.items():
         is_current = "✅ " if mode_key == db.get_current_rate_mode() else "   "
@@ -1030,7 +1032,7 @@ def cmd_current_mode(message):
         msgs_per_min = round(max_responses / 60, 2)
         
         current_text = f"""
-🎛️ Текущий режим лимитов v21:
+🎛️ Текущий режим лимитов v21-fixed:
 
 {mode_config['emoji']} **{mode_config['name']}**
 📝 {mode_config['description']}
@@ -1120,7 +1122,7 @@ def cmd_stats(message):
         current_mode = db.get_current_rate_mode()
         
         stats_text = f"""
-📊 Статистика бота v21:
+📊 Статистика бота v21-fixed:
 
 🤖 Статус: {status_emoji} {status_text}
 👥 Активных пользователей: {total_users}
@@ -1138,7 +1140,7 @@ def cmd_stats(message):
 
 🏆 Лидер: {f"@{top_user[0]} ({top_user[1]} ссылок)" if top_user else "пока нет"}
 
-🔗 Webhook: активен | Версия: v21 (исправленная)
+🔗 Webhook: активен | Версия: v21-fixed (исправленная)
         """
         
         bot.reply_to(message, stats_text)
@@ -1170,7 +1172,7 @@ def cmd_activate(message):
 ⚙️ Управление: /help
 🛑 Отключить: /deactivate
 
-🆕 v21: Исправлены краши команд! 🎵
+🆕 v21-fixed: Исправлены краши команд! 🎵
     """
     
     bot.reply_to(message, welcome_text)
@@ -1214,7 +1216,7 @@ def cmd_bot_stat(message):
         usage_percent = round((stats['hourly_responses'] / hourly_limit) * 100, 1)
         
         stat_text = f"""
-🤖 Статистика бота v21:
+🤖 Статистика бота v21-fixed:
 
 {status_emoji} Статус: {status_text}
 {current_limits['mode_emoji']} Режим: {current_mode.upper()}
@@ -1225,7 +1227,7 @@ def cmd_bot_stat(message):
 
 ⚠️ Статус: {'🟡 Приближение к лимиту' if usage_percent >= 80 else '✅ Всё в порядке'}
 
-🆕 v21: Исправлены краши и улучшена безопасность
+🆕 v21-fixed: Исправлены краши и улучшена безопасность
         """
         
         bot.reply_to(message, stat_text)
@@ -1248,7 +1250,7 @@ def cmd_link_stats(message):
             bot.reply_to(message, "📊 Пока нет пользователей с ссылками")
             return
         
-        stats_text = "📊 Статистика по ссылкам v21:\n\n"
+        stats_text = "📊 Статистика по ссылкам v21-fixed:\n\n"
         
         for i, (username, total_links, last_updated) in enumerate(users[:10], 1):
             if total_links >= 31:
@@ -1385,7 +1387,7 @@ def cmd_test_regex(message):
     test_text = args[1]
     links = extract_links(test_text)
     
-    result_text = f"🧪 Результат тестирования v21:\n\n📝 Текст: {test_text}\n\n"
+    result_text = f"🧪 Результат тестирования v21-fixed:\n\n📝 Текст: {test_text}\n\n"
     
     if links:
         result_text += f"✅ Найдено ссылок: {len(links)}\n"
@@ -1420,7 +1422,7 @@ def cmd_all_links(message):
             bot.reply_to(message, "📋 В базе данных пока нет ссылок")
             return
         
-        links_text = f"📋 Все ссылки в базе v21 (последние 50):\n\n"
+        links_text = f"📋 Все ссылки в базе v21-fixed (последние 50):\n\n"
         
         for i, (link_url, username, timestamp) in enumerate(links[:20], 1):
             username_display = f"@{username}" if username else "Неизвестный"
@@ -1464,7 +1466,7 @@ def cmd_recent_links(message):
             bot.reply_to(message, "📋 В базе данных пока нет ссылок")
             return
         
-        recent_text = f"🕐 Последние {len(recent_links)} ссылок v21:\n\n"
+        recent_text = f"🕐 Последние {len(recent_links)} ссылок v21-fixed:\n\n"
         
         for i, (link_url, username, timestamp) in enumerate(recent_links, 1):
             username_display = f"@{username}" if username else "Неизвестный"
@@ -1618,7 +1620,7 @@ def setup_webhook():
 def main():
     """Основная функция запуска бота v21"""
     try:
-        logger.info("🚀 STARTUP: Starting Presave Reminder Bot v21")
+        logger.info("🚀 STARTUP: Starting Presave Reminder Bot v21-fixed")
         logger.info(f"🔧 CONFIG: GROUP_ID={GROUP_ID}, THREAD_ID={THREAD_ID}")
         logger.info(f"🔐 SECURITY: Enhanced webhook protection enabled")
         logger.info(f"⚡ DATABASE: Connection pooling with {DB_POOL_SIZE} connections")
@@ -1631,7 +1633,7 @@ def main():
         current_mode = db.get_current_rate_mode()
         current_limits = get_current_limits()
         
-        logger.info("🤖 Presave Reminder Bot v21 запущен!")
+        logger.info("🤖 Presave Reminder Bot v21-fixed запущен!")
         logger.info(f"👥 Группа: {GROUP_ID}")
         logger.info(f"📋 Топик: {THREAD_ID}")
         logger.info(f"👑 Админы: {ADMIN_IDS}")
@@ -1648,7 +1650,7 @@ def main():
         with socketserver.TCPServer(("", WEBHOOK_PORT), WebhookHandler) as httpd:
             logger.info(f"🌐 Webhook сервер запущен на порту {WEBHOOK_PORT}")
             logger.info(f"🔗 URL: {WEBHOOK_URL}")
-            logger.info("✅ READY: Bot v21 is fully operational with enhanced stability")
+            logger.info("✅ READY: Bot v21-fixed is fully operational with enhanced stability")
             httpd.serve_forever()
         
     except Exception as e:
