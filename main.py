@@ -728,8 +728,40 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 "service": "telegram-bot",
                 "version": "v21",
                 "security": "enhanced",
-                "features": ["webhook_security", "connection_pooling"]
+                "features": ["webhook_security", "connection_pooling", "keep_alive"]
             })
+            self.wfile.write(response.encode())
+        
+        elif self.path == '/keepalive':
+            # Специальный endpoint для внешних пинг-сервисов
+            client_ip = self.client_address[0]
+            logger.info(f"💓 KEEPALIVE: Keep-alive ping received from {client_ip}")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            
+            # Проверяем статус бота
+            try:
+                bot_active = db.is_bot_active()
+                current_limits = get_current_limits()
+                
+                response = json.dumps({
+                    "status": "alive",
+                    "timestamp": time.time(),
+                    "version": "v21",
+                    "bot_active": bot_active,
+                    "current_mode": current_limits['mode_name'],
+                    "uptime_check": "✅ OK"
+                })
+            except Exception as e:
+                logger.error(f"❌ KEEPALIVE_ERROR: {e}")
+                response = json.dumps({
+                    "status": "alive_with_errors",
+                    "timestamp": time.time(),
+                    "error": str(e)
+                })
+            
             self.wfile.write(response.encode())
         else:
             self.send_response(404)
@@ -746,6 +778,39 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 "service": "telegram-bot",
                 "version": "v21"
             })
+            self.wfile.write(response.encode())
+        
+        elif self.path == '/keepalive':
+            # Keep-alive endpoint для GET запросов (UptimeRobot использует GET)
+            client_ip = self.client_address[0]
+            logger.info(f"💓 KEEPALIVE_GET: Keep-alive ping (GET) from {client_ip}")
+            
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            
+            try:
+                bot_active = db.is_bot_active()
+                current_limits = get_current_limits()
+                
+                response = json.dumps({
+                    "status": "alive",
+                    "method": "GET",
+                    "timestamp": time.time(),
+                    "version": "v21",
+                    "bot_active": bot_active,
+                    "current_mode": current_limits['mode_name'],
+                    "uptime_check": "✅ OK"
+                })
+            except Exception as e:
+                logger.error(f"❌ KEEPALIVE_GET_ERROR: {e}")
+                response = json.dumps({
+                    "status": "alive_with_errors",
+                    "method": "GET", 
+                    "timestamp": time.time(),
+                    "error": str(e)
+                })
+            
             self.wfile.write(response.encode())
         elif self.path == WEBHOOK_PATH:
             self.send_response(200)
