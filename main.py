@@ -3493,7 +3493,7 @@ def cmd_deactivate(message):
 # === WEBHOOK СЕРВЕР v23.4 ===
 
 class WebhookHandler(BaseHTTPRequestHandler):
-def do_POST(self):
+    def do_POST(self):
         client_ip = self.client_address[0]
         logger.info(f"📨 WEBHOOK_POST: Request from {client_ip} to {self.path}")
         
@@ -3597,7 +3597,7 @@ def do_POST(self):
         })
         self.wfile.write(response.encode())
     
-def _handle_keepalive_request(self, client_ip):
+    def _handle_keepalive_request(self, client_ip):
         """Keepalive monitoring эндпоинт с улучшенной диагностикой"""
         logger.info(f"💓 KEEPALIVE: Keep-alive request from {client_ip}")
         
