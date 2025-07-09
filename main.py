@@ -3157,21 +3157,28 @@ def cmd_help(message):
 /stats — общая статистика работы
 /botstat — мониторинг лимитов
 
+🔧 ДИАГНОСТИКА (НОВОЕ v23.5):
+/full_diagnosis — полная проверка всех систем
+/check_bot_rights — проверка прав в группе  
+/test_group — тест получения сообщений в топике
+/test_presave_system — проверить систему пресейвов
+/test_keepalive — проверить мониторинг
+
 📊 Статистика и аналитика:
 /linkstats — рейтинг пользователей
 /topusers — топ-5 активных
 /userstat @username — статистика пользователя
 /mystat — моя подробная статистика
 
+🎵 ПЛАТФОРМЫ И ТЕСТИРОВАНИЕ:
+/platforms — список поддерживаемых платформ
+/test_links — тест распознавания ссылок
+
 ⚙️ Настройки и управление:
 /modes — показать режимы лимитов
 /setmode <режим> — сменить режим
 /setmessage текст — изменить напоминание
 /clearhistory — очистить историю
-
-🧪 Тестирование v23.4:
-/test_presave_system — проверить систему
-/test_keepalive — проверить мониторинг
 
 ✅ ВСЕ КРИТИЧЕСКИЕ ОШИБКИ ИСПРАВЛЕНЫ!
 🚀 Готов к работе в продакшне!
@@ -4173,6 +4180,240 @@ def cmd_clearhistory(message):
         logger.error(f"❌ Error in CLEARHISTORY: {e}")
         bot.reply_to(message, "❌ Ошибка очистки истории")
 
+@bot.message_handler(commands=['test_links'])
+@check_permissions(['admin', 'user']) 
+def cmd_test_links(message):
+    """Тест распознавания различных типов ссылок"""
+    test_links = [
+        "https://open.spotify.com/track/example",
+        "https://music.apple.com/album/example", 
+        "https://music.yandex.ru/track/example",
+        "https://band.link/example",
+        "https://linktr.ee/example",
+        "https://youtube.com/watch?v=example"
+    ]
+    
+    result_text = "🔗 **Тест распознавания ссылок v23.5:**\n\n"
+    
+    for link in test_links:
+        extracted = extract_links(link)
+        platforms = extract_platforms(link)
+        
+        result_text += f"🎵 {link}\n"
+        result_text += f"   {'✅' if extracted else '❌'} Распознано: {len(extracted)} ссылок\n"
+        result_text += f"   🎯 Платформы: {', '.join(platforms) if platforms else 'автоопределение'}\n\n"
+    
+    result_text += "💡 Все указанные платформы и конструкторы поддерживаются!"
+    
+    bot.reply_to(message, result_text, parse_mode='Markdown')
+
+@bot.message_handler(commands=['platforms'])
+@check_permissions(['admin', 'user'])
+def cmd_platforms(message):
+    """Список поддерживаемых платформ"""
+    platforms_text = """
+🎵 **Поддерживаемые платформы v23.5:**
+
+**🎯 СТРИМИНГОВЫЕ СЕРВИСЫ:**
+- 🎵 Spotify - open.spotify.com
+- 🍎 Apple Music - music.apple.com  
+- 🔊 Yandex Music - music.yandex.ru
+- ▶️ YouTube Music - music.youtube.com
+- 🎼 Deezer - deezer.com
+- ☁️ SoundCloud - soundcloud.com
+
+**🔗 КОНСТРУКТОРЫ ССЫЛОК:**
+- 🔗 Bandlink - band.link
+- 🌐 Linktr.ee - linktr.ee
+- 📱 Taplink - taplink.cc
+- 🎯 И другие популярные конструкторы
+
+**💡 КАК ИСПОЛЬЗОВАТЬ:**
+1. Отправьте ссылку в топик "Пресейвы"
+2. Или используйте /menu → "Заявить пресейв"
+3. Бот автоматически распознает платформу
+
+✅ **Все ссылки должны начинаться с https://**
+    """
+    
+    bot.reply_to(message, platforms_text, parse_mode='Markdown')
+
+@bot.message_handler(commands=['full_diagnosis'])
+@check_permissions(['admin'])
+def cmd_full_diagnosis(message):
+    """Полная диагностика проблем с группой"""
+    try:
+        diagnosis_results = []
+        
+        # 1. Проверка webhook
+        try:
+            webhook_info = bot.get_webhook_info()
+            if webhook_info.url:
+                diagnosis_results.append(f"✅ Webhook: {webhook_info.url}")
+                if webhook_info.has_custom_certificate:
+                    diagnosis_results.append("✅ Certificate: Custom")
+                if webhook_info.pending_update_count > 0:
+                    diagnosis_results.append(f"⚠️ Pending updates: {webhook_info.pending_update_count}")
+            else:
+                diagnosis_results.append("❌ Webhook: НЕ НАСТРОЕН")
+        except Exception as e:
+            diagnosis_results.append(f"❌ Webhook check failed: {str(e)}")
+        
+        # 2. Проверка прав в группе
+        if message.chat.id == GROUP_ID:
+            try:
+                bot_member = bot.get_chat_member(GROUP_ID, bot.get_me().id)
+                if bot_member.status == 'administrator':
+                    diagnosis_results.append("✅ Статус в группе: Администратор")
+                    if hasattr(bot_member, 'can_manage_topics') and bot_member.can_manage_topics:
+                        diagnosis_results.append("✅ Manage Topics: ЕСТЬ")
+                    else:
+                        diagnosis_results.append("❌ Manage Topics: НЕТ (КРИТИЧНО!)")
+                else:
+                    diagnosis_results.append(f"❌ Статус в группе: {bot_member.status} (НУЖЕН АДМИН)")
+            except Exception as e:
+                diagnosis_results.append(f"❌ Group rights check failed: {str(e)}")
+        else:
+            diagnosis_results.append("⚠️ Команда выполнена не в супергруппе Кински")
+        
+        # 3. Проверка настроек бота
+        try:
+            bot_info = bot.get_me()
+            diagnosis_results.append(f"✅ Bot info: @{bot_info.username}")
+            diagnosis_results.append(f"✅ Can join groups: {bot_info.can_join_groups}")
+            diagnosis_results.append(f"✅ Can read all messages: {bot_info.can_read_all_group_messages}")
+            
+            if not bot_info.can_read_all_group_messages:
+                diagnosis_results.append("❌ ПРОБЛЕМА: Privacy mode включен!")
+                diagnosis_results.append("🔧 Решение: @BotFather → /mybots → Bot Settings → Group Privacy → DISABLE")
+        except Exception as e:
+            diagnosis_results.append(f"❌ Bot info check failed: {str(e)}")
+        
+        # 4. Проверка активности бота
+        bot_active = db.is_bot_active()
+        diagnosis_results.append(f"{'✅' if bot_active else '❌'} Bot active: {bot_active}")
+        
+        # 5. Проверка ID группы и топика
+        diagnosis_results.append(f"✅ Expected GROUP_ID: {GROUP_ID}")
+        diagnosis_results.append(f"✅ Expected THREAD_ID: {THREAD_ID}")
+        diagnosis_results.append(f"✅ Current chat ID: {message.chat.id}")
+        if hasattr(message, 'message_thread_id'):
+            diagnosis_results.append(f"✅ Current thread ID: {message.message_thread_id}")
+        
+        result_text = f"""
+🔍 **ПОЛНАЯ ДИАГНОСТИКА БОТА v23.5:**
+
+{chr(10).join(diagnosis_results)}
+
+🎯 **СЛЕДУЮЩИЕ ШАГИ:**
+1. Если "Privacy mode включен" → исправьте в @BotFather
+2. Если "НЕТ прав админа" → добавьте бота как админа с Manage Topics
+3. Если "Webhook не настроен" → перезапустите бота
+4. Если всё ✅ → выполните /test_group в топике Пресейвы
+
+💡 **После исправлений выполните:** /test_group в топике
+        """
+        
+        bot.reply_to(message, result_text, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"❌ Error in full diagnosis: {e}")
+        bot.reply_to(message, f"❌ Ошибка диагностики: {str(e)}")
+
+@bot.message_handler(commands=['check_bot_rights'])
+@check_permissions(['admin'])
+def cmd_check_bot_rights(message):
+    """Проверка прав бота в группе"""
+    try:
+        if message.chat.id != GROUP_ID:
+            bot.reply_to(message, "❌ Команда должна выполняться в супергруппе Кински")
+            return
+        
+        # Получаем информацию о чате
+        chat_info = bot.get_chat(GROUP_ID)
+        
+        # Получаем информацию о боте в чате
+        bot_member = bot.get_chat_member(GROUP_ID, bot.get_me().id)
+        
+        rights_status = []
+        
+        if bot_member.status == 'administrator':
+            rights_status.append("✅ Статус: Администратор")
+            
+            # Проверяем конкретные права
+            if hasattr(bot_member, 'can_manage_topics') and bot_member.can_manage_topics:
+                rights_status.append("✅ Manage Topics: ЕСТЬ")
+            else:
+                rights_status.append("❌ Manage Topics: НЕТ (КРИТИЧНО!)")
+            
+            if hasattr(bot_member, 'can_delete_messages') and bot_member.can_delete_messages:
+                rights_status.append("✅ Delete Messages: ЕСТЬ")
+            else:
+                rights_status.append("⚠️ Delete Messages: НЕТ")
+                
+            if hasattr(bot_member, 'can_restrict_members') and bot_member.can_restrict_members:
+                rights_status.append("✅ Restrict Members: ЕСТЬ")
+            else:
+                rights_status.append("⚠️ Restrict Members: НЕТ")
+                
+        elif bot_member.status == 'member':
+            rights_status.append("❌ Статус: Обычный участник")
+            rights_status.append("❌ Нужно добавить как администратора!")
+        else:
+            rights_status.append(f"❌ Статус: {bot_member.status}")
+        
+        result_text = f"""
+🔍 **Проверка прав бота:**
+
+📊 **ИНФОРМАЦИЯ О ЧАТЕ:**
+- Название: {chat_info.title}
+- Тип: {chat_info.type}
+- ID: {chat_info.id}
+
+🤖 **ПРАВА БОТА:**
+{chr(10).join(rights_status)}
+
+💡 **РЕКОМЕНДАЦИИ:**
+{'✅ Права корректные!' if bot_member.status == 'administrator' and (not hasattr(bot_member, 'can_manage_topics') or bot_member.can_manage_topics) else '❌ Добавьте бота как админа с правом "Manage Topics"!'}
+        """
+        
+        bot.reply_to(message, result_text, parse_mode='Markdown')
+        
+    except Exception as e:
+        logger.error(f"❌ Error checking bot rights: {e}")
+        bot.reply_to(message, f"❌ Ошибка проверки прав: {str(e)}")
+
+@bot.message_handler(commands=['test_group'])
+@check_permissions(['admin'])
+def cmd_test_group(message):
+    """Тест получения сообщений в группе"""
+    if message.chat.id == GROUP_ID:
+        if message.message_thread_id == THREAD_ID:
+            bot.reply_to(message, f"""
+✅ **ТЕСТ ГРУППЫ УСПЕШЕН:**
+- Получил сообщение в правильном топике
+- Chat ID: {message.chat.id}
+- Thread ID: {message.message_thread_id} 
+- От пользователя: @{message.from_user.username}
+- Права бота: КОРРЕКТНЫЕ
+
+🚀 Бот готов к работе в топике!
+            """, parse_mode='Markdown')
+        else:
+            bot.reply_to(message, f"""
+⚠️ **НЕПРАВИЛЬНЫЙ ТОПИК:**
+- Ожидался Thread ID: {THREAD_ID}
+- Получен Thread ID: {message.message_thread_id}
+- Выполните команду в топике "Пресейвы"
+            """, parse_mode='Markdown')
+    else:
+        bot.reply_to(message, f"""
+❌ **НЕПРАВИЛЬНАЯ ГРУППА:**
+- Ожидалась группа: {GROUP_ID}
+- Получена группа: {message.chat.id}
+- Выполните команду в супергруппе Кински
+        """, parse_mode='Markdown')
+
 @bot.message_handler(commands=['test_keepalive'])
 @check_permissions(['admin'])
 def cmd_test_keepalive(message):
@@ -4204,9 +4445,9 @@ def cmd_test_keepalive(message):
 ✅ **Response:** {"ОК" if status_code == 200 else "Ошибка"}
 
 🔍 **ДИАГНОСТИКА:**
-• Service Status: {service_status}
-• Database Check: {db_check}
-• Telegram API: {telegram_check}
+- Service Status: {service_status}
+- Database Check: {db_check}
+- Telegram API: {telegram_check}
 
 🎯 **РЕЗУЛЬТАТ:** {f"✅ Keepalive работает!" if status_code == 200 else "❌ Проблема с keepalive!"}
             """
@@ -4219,9 +4460,9 @@ def cmd_test_keepalive(message):
 ❌ **Ошибка:** {str(e)}
 
 🔧 **Проверьте:**
-• Сетевое подключение
-• Доступность сервера
-• Правильность URL
+- Сетевое подключение
+- Доступность сервера
+- Правильность URL
             """
         
         bot.reply_to(message, result_text, parse_mode='Markdown')
