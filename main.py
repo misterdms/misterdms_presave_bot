@@ -1,6 +1,6 @@
-# Current version: v22
-# Presave Reminder Bot - Версия с inline кнопками и пользовательскими правами
-# Основано на стабильной v21-fixed, добавлены кнопки и расширенные права пользователей
+# Current version: v23 Plan 1
+# Presave Reminder Bot - План 1: База данных и инфраструктура
+# Добавлена система пресейвов с базовой инфраструктурой
 
 import logging
 import re
@@ -50,6 +50,72 @@ USER_STATES = {
     'waiting_message': 'Ожидание ввода сообщения',
     'waiting_mode': 'Ожидание выбора режима'
 }
+
+# === PRESAVE SYSTEM PATTERNS v23 ===
+PRESAVE_CLAIM_PATTERNS = {
+    'basic': [
+        r'сделал\s+пресейв',
+        r'готово',
+        r'сделал(?:\s+где\s+смог)?',
+        r'сохранил',
+        r'добавил\s+в\s+(?:библиотеку|плейлист)',
+        r'пресейв\s+готов'
+    ],
+    'platforms': {
+        'spotify': r'(?:спотиф|spotify|спот)',
+        'apple': r'(?:яблок|apple|itunes|эпл)',
+        'yandex': r'(?:яндекс|yandex|я\.музыка)',
+        'vk': r'(?:вк|vkmusic|вконтакте)',
+        'deezer': r'(?:deezer|дизер)',
+        'youtube': r'(?:youtube|ютуб|yt music)'
+    }
+}
+
+ADMIN_VERIFICATION_PATTERNS = [
+    r'подтверждаю',
+    r'подтверждено', 
+    r'проверено'
+]
+
+def is_presave_claim(text):
+    """Определение заявления о пресейве"""
+    if not text:
+        return False
+    
+    text_lower = text.lower()
+    
+    for pattern in PRESAVE_CLAIM_PATTERNS['basic']:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True
+    
+    return False
+
+def is_admin_verification(message):
+    """Определение подтверждения админа"""
+    if not message.text or not message.reply_to_message:
+        return False
+    
+    text_lower = message.text.lower()
+    
+    for pattern in ADMIN_VERIFICATION_PATTERNS:
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            return True
+    
+    return False
+
+def extract_platforms(text):
+    """Извлечение платформ из текста"""
+    if not text:
+        return []
+    
+    found_platforms = []
+    text_lower = text.lower()
+    
+    for platform, pattern in PRESAVE_CLAIM_PATTERNS['platforms'].items():
+        if re.search(pattern, text_lower, re.IGNORECASE):
+            found_platforms.append(platform)
+    
+    return found_platforms
 
 # === СИСТЕМА РЕЖИМОВ ЛИМИТОВ ===
 def load_rate_limit_modes():
@@ -228,6 +294,36 @@ def check_permissions(allowed_roles: list):
         return wrapper
     return decorator
 
+# === PRESAVE SYSTEM CLASSES v23 (ЗАГОТОВКИ ДЛЯ ПЛАН 1) ===
+
+class PresaveClaimProcessor:
+    """Обработчик заявлений о пресейвах (заготовка для План 1)"""
+    
+    def __init__(self, db_connection):
+        self.db = db_connection
+    
+    def process_claim(self, message):
+        """Обработка заявления - пока только логирование"""
+        logger.info(f"🎵 PRESAVE_CLAIM detected from user {message.from_user.id}: {message.text[:50]}")
+        
+        # В План 1 только детекция, обработка в План 2
+        platforms = extract_platforms(message.text)
+        logger.info(f"🎵 PLATFORMS detected: {platforms}")
+        
+        return None  # Пока не обрабатываем
+
+class PresaveVerificationProcessor:
+    """Обработчик подтверждений админов (заготовка для План 1)"""
+    
+    def __init__(self, db_connection):
+        self.db = db_connection
+    
+    def process_verification(self, message):
+        """Обработка подтверждения - пока только логирование"""
+        logger.info(f"🎵 ADMIN_VERIFICATION detected from admin {message.from_user.id}")
+        
+        return None  # Пока не обрабатываем
+
 # === ФУНКЦИИ УПРАВЛЕНИЯ РЕЖИМАМИ ===
 
 def get_current_limits():
@@ -297,7 +393,7 @@ def reload_rate_limit_modes():
     RATE_LIMIT_MODES = load_rate_limit_modes()
     logger.info("🔄 RELOAD: Rate limit modes reloaded from environment variables")
 
-# === БАЗА ДАННЫХ С РАСШИРЕНИЯМИ v22 ===
+# === БАЗА ДАННЫХ С РАСШИРЕНИЯМИ v23 ===
 
 class Database:
     def __init__(self, db_path: str = "bot.db"):
@@ -309,7 +405,7 @@ class Database:
         return self.pool.get_connection()
     
     def init_db(self):
-        """Инициализация базы данных с новыми таблицами v22"""
+        """Инициализация базы данных с новыми таблицами v23"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -368,7 +464,34 @@ class Database:
                 )
             ''')
             
-            # === НОВЫЕ ТАБЛИЦЫ v22 ===
+            # === НОВЫЕ ТАБЛИЦЫ v23 ДЛЯ ПРЕСЕЙВОВ ===
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS presave_claims (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL,
+                    username TEXT,
+                    message_id INTEGER NOT NULL,
+                    claim_text TEXT NOT NULL,
+                    extracted_platforms TEXT,
+                    status TEXT DEFAULT 'pending',
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP
+                )
+            ''')
+            
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS presave_verifications (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    claim_id INTEGER REFERENCES presave_claims(id),
+                    admin_id INTEGER NOT NULL,
+                    admin_username TEXT,
+                    verification_type TEXT NOT NULL,
+                    admin_message_id INTEGER,
+                    notes TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
             
             # Сессии пользователей для состояний
             cursor.execute('''
@@ -380,11 +503,32 @@ class Database:
                 )
             ''')
             
-            # Создаем индексы
+            # Проверяем и добавляем новые колонки в user_links для пресейвов
+            cursor.execute("PRAGMA table_info(user_links)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'total_claimed_presaves' not in columns:
+                cursor.execute('ALTER TABLE user_links ADD COLUMN total_claimed_presaves INTEGER DEFAULT 0')
+                logger.info("✅ DATABASE: Added total_claimed_presaves column")
+            
+            if 'total_verified_presaves' not in columns:
+                cursor.execute('ALTER TABLE user_links ADD COLUMN total_verified_presaves INTEGER DEFAULT 0')
+                logger.info("✅ DATABASE: Added total_verified_presaves column")
+            
+            if 'last_presave_claim' not in columns:
+                cursor.execute('ALTER TABLE user_links ADD COLUMN last_presave_claim TIMESTAMP')
+                logger.info("✅ DATABASE: Added last_presave_claim column")
+            
+            # Создаем индексы для производительности
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_link_history_timestamp ON link_history(timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_bot_responses_timestamp ON bot_responses(timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_links_total ON user_links(total_links)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_sessions_state ON user_sessions(current_state)')
+            
+            # Новые индексы для пресейвов
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_presave_claims_user_status ON presave_claims(user_id, status)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_presave_claims_created ON presave_claims(created_at)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_verifications_claim ON presave_verifications(claim_id)')
             
             # Инициализация базовых записей
             cursor.execute('INSERT OR IGNORE INTO bot_activity (id, is_active) VALUES (1, 1)')
@@ -403,7 +547,7 @@ class Database:
             )
             
             conn.commit()
-            logger.info("✅ DATABASE: Database initialized successfully with v22 improvements")
+            logger.info("✅ DATABASE: Database initialized successfully with v23 presave features")
 
     # === МЕТОДЫ ДЛЯ СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЕЙ ===
     
@@ -434,7 +578,7 @@ class Database:
             cursor.execute('DELETE FROM user_sessions WHERE user_id = ?', (user_id,))
             conn.commit()
 
-    # === ОСТАЛЬНЫЕ МЕТОДЫ (из v21) ===
+    # === ОСТАЛЬНЫЕ МЕТОДЫ (из v22) ===
     
     def add_user_links(self, user_id: int, username: str, links: list, message_id: int):
         safe_username = security.sanitize_username(username)
@@ -975,8 +1119,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
             response = json.dumps({
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "version": "v22",
-                "features": ["inline_buttons", "user_permissions", "state_management"]
+                "version": "v23-plan1",
+                "features": ["inline_buttons", "user_permissions", "presave_system_foundation"]
             })
             self.wfile.write(response.encode())
         
@@ -995,10 +1139,10 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 response = json.dumps({
                     "status": "alive",
                     "timestamp": time.time(),
-                    "version": "v22",
+                    "version": "v23-plan1",
                     "bot_active": bot_active,
                     "current_mode": current_limits['mode_name'],
-                    "features": ["inline_buttons", "user_permissions"],
+                    "features": ["inline_buttons", "user_permissions", "presave_foundation"],
                     "uptime_check": "✅ OK"
                 })
             except Exception as e:
@@ -1022,7 +1166,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             response = json.dumps({
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "version": "v22"
+                "version": "v23-plan1"
             })
             self.wfile.write(response.encode())
         
@@ -1042,10 +1186,10 @@ class WebhookHandler(BaseHTTPRequestHandler):
                     "status": "alive",
                     "method": "GET",
                     "timestamp": time.time(),
-                    "version": "v22",
+                    "version": "v23-plan1",
                     "bot_active": bot_active,
                     "current_mode": current_limits['mode_name'],
-                    "features": ["inline_buttons", "user_permissions"],
+                    "features": ["inline_buttons", "user_permissions", "presave_foundation"],
                     "uptime_check": "✅ OK"
                 })
             except Exception as e:
@@ -1067,7 +1211,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Presave Reminder Bot v22 - Webhook</title>
+                <title>Presave Reminder Bot v23 Plan 1 - Webhook</title>
                 <meta charset="utf-8">
                 <style>
                     body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
@@ -1078,32 +1222,34 @@ class WebhookHandler(BaseHTTPRequestHandler):
             </head>
             <body>
                 <div class="header">
-                    <h1>🤖 Presave Reminder Bot v22</h1>
-                    <h2>Inline Buttons & User Permissions</h2>
+                    <h1>🤖 Presave Reminder Bot v23 Plan 1</h1>
+                    <h2>Foundation: Database & Infrastructure</h2>
                 </div>
                 
                 <div class="status">
-                    <h3>✅ Status: Active & Modern</h3>
-                    <p>Version with inline buttons and extended user permissions</p>
+                    <h3>✅ Status: Foundation Ready</h3>
+                    <p>Plan 1: Database tables created, detection system active</p>
                 </div>
                 
                 <div class="feature">
-                    <h4>🆕 New Features v22</h4>
+                    <h4>🆕 Plan 1 Features</h4>
                     <ul>
-                        <li>Inline keyboard buttons interface</li>
-                        <li>User permissions system</li>
-                        <li>Interactive commands</li>
-                        <li>Personal statistics (/mystat)</li>
+                        <li>New presave_claims table</li>
+                        <li>New presave_verifications table</li>
+                        <li>Extended user_links with presave columns</li>
+                        <li>Presave claim detection system</li>
+                        <li>Admin verification detection</li>
+                        <li>Platform extraction from text</li>
                     </ul>
                 </div>
                 
                 <div class="feature">
                     <h4>🔐 Security & Performance</h4>
                     <ul>
-                        <li>Role-based access control</li>
-                        <li>State management system</li>
-                        <li>Enhanced database optimization</li>
-                        <li>Production webhook compatibility</li>
+                        <li>Enhanced database indexing</li>
+                        <li>Connection pooling optimization</li>
+                        <li>Input validation for presave data</li>
+                        <li>Test framework for presave system</li>
                     </ul>
                 </div>
             </body>
@@ -1117,7 +1263,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-# === КОМАНДЫ v22 ===
+# === КОМАНДЫ v23 ===
 
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
@@ -1125,20 +1271,20 @@ def cmd_start(message):
     
     if user_role == 'admin':
         bot.reply_to(message, """
-🤖 Presave Reminder Bot v22 запущен!
+🤖 Presave Reminder Bot v23 Plan 1 запущен!
 
-🆕 Новые возможности v22:
-📱 Inline кнопки интерфейс
-👥 Права доступа для пользователей  
-🎯 Интерактивные команды
-👤 Персональная статистика /mystat
+🆕 Новые возможности Plan 1:
+🗃️ База данных для системы пресейвов
+🔍 Детекция заявлений о пресейвах  
+📊 Расширенная статистика пользователей
+🏗️ Инфраструктура для будущих планов
 
 👑 Вы вошли как администратор
 Для управления используйте /help
         """)
     else:
         bot.reply_to(message, """
-🤖 Добро пожаловать в Presave Reminder Bot v22!
+🤖 Добро пожаловать в Presave Reminder Bot v23!
 
 🎵 Этот бот поможет вам:
 • Отслеживать пресейвы музыки
@@ -1147,6 +1293,8 @@ def cmd_start(message):
 
 📊 Доступные команды: /help
 👤 Ваша статистика: /mystat
+
+🆕 Скоро: Система подтверждения пресейвов!
         """)
 
 @bot.message_handler(commands=['help'])
@@ -1155,7 +1303,7 @@ def cmd_help(message):
     
     if user_role == 'admin':
         help_text = """
-🤖 Команды бота v22 (Администратор):
+🤖 Команды бота v23 Plan 1 (Администратор):
 
 👑 Административные команды:
 /help — этот список команд
@@ -1188,11 +1336,14 @@ def cmd_help(message):
 /inlinemode_off — отключить кнопки
 /menu — показать главное меню кнопок
 
-🆕 v22: Inline кнопки + права пользователей!
+🧪 Тестирование системы пресейвов:
+/test_presave_system — проверить инфраструктуру v23
+
+🆕 v23 Plan 1: Фундамент системы пресейвов готов!
         """
     else:
         help_text = """
-🤖 Команды бота v22 (Пользователь):
+🤖 Команды бота v23 Plan 1 (Пользователь):
 
 📊 Статистика:
 /help — этот список команд
@@ -1213,6 +1364,8 @@ def cmd_help(message):
 💎 Амбассадор (31+ ссылок)
 
 🎵 Делитесь ссылками на музыку и растите в рейтинге!
+
+🆕 Скоро: Система подтверждения пресейвов!
         """
     
     bot.reply_to(message, help_text)
@@ -1239,6 +1392,8 @@ def cmd_my_stat(message):
 📈 До первой ссылки: Поделитесь музыкой!
 
 💡 Начните делиться ссылками на музыку для роста в рейтинге!
+
+🆕 Скоро: Отслеживание ваших пресейвов!
             """)
             return
         
@@ -1281,6 +1436,8 @@ def cmd_my_stat(message):
 {f"До {next_rank}: {progress_needed} ссылок" if progress_needed > 0 else "Максимальное звание достигнуто! 🎉"}
 
 💪 {'Продолжайте в том же духе!' if total_links > 0 else 'Начните делиться музыкой!'}
+
+🆕 Скоро: Система пресейвов с достижениями!
         """
         
         bot.reply_to(message, stat_text)
@@ -1288,6 +1445,149 @@ def cmd_my_stat(message):
     except Exception as e:
         logger.error(f"❌ Error in MYSTAT command: {str(e)}")
         bot.reply_to(message, "❌ Ошибка получения вашей статистики")
+
+# === ТЕСТОВАЯ КОМАНДА ДЛЯ ПЛАН 1 ===
+
+@bot.message_handler(commands=['test_presave_system'])
+@check_permissions(['admin'])
+def cmd_test_presave_system(message):
+    """Тестовая команда для проверки системы пресейвов Plan 1"""
+    try:
+        test_results = []
+        
+        # Тест 1: Проверяем таблицы
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            # Проверяем presave_claims
+            cursor.execute("SELECT COUNT(*) FROM presave_claims")
+            claims_count = cursor.fetchone()[0]
+            test_results.append(f"✅ presave_claims: {claims_count} записей")
+            
+            # Проверяем presave_verifications  
+            cursor.execute("SELECT COUNT(*) FROM presave_verifications")
+            verifications_count = cursor.fetchone()[0]
+            test_results.append(f"✅ presave_verifications: {verifications_count} записей")
+            
+            # Проверяем новые колонки в user_links
+            cursor.execute("PRAGMA table_info(user_links)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            required_columns = ['total_claimed_presaves', 'total_verified_presaves', 'last_presave_claim']
+            for col in required_columns:
+                if col in columns:
+                    test_results.append(f"✅ Колонка {col}: OK")
+                else:
+                    test_results.append(f"❌ Колонка {col}: ОТСУТСТВУЕТ")
+        
+        # Тест 2: Проверяем паттерны детекции
+        test_phrases = [
+            ("сделал пресейв", True),
+            ("готово", True), 
+            ("сохранил", True),
+            ("привет как дела", False),
+            ("подтверждаю", False)  # Это не заявление, а подтверждение
+        ]
+        
+        for phrase, expected in test_phrases:
+            detected = is_presave_claim(phrase)
+            status = "✅" if detected == expected else "❌"
+            test_results.append(f"{status} '{phrase}': {detected} (ожидалось: {expected})")
+        
+        # Тест 3: Проверяем извлечение платформ
+        platform_tests = [
+            ("на спотифай", ["spotify"]),
+            ("яндекс и эпл", ["yandex", "apple"]),
+            ("вк музыка", ["vk"]),
+            ("сделал пресейв", [])  # без указания платформ
+        ]
+        
+        for text, expected in platform_tests:
+            extracted = extract_platforms(text)
+            matches = set(extracted) == set(expected)
+            status = "✅" if matches else "❌"
+            test_results.append(f"{status} Платформы '{text}': {extracted}")
+        
+        # Тест 4: Проверяем детекцию подтверждений админов
+        verification_tests = [
+            ("подтверждаю", True),
+            ("подтверждено", True),
+            ("проверено", True),
+            ("отличная музыка", False)
+        ]
+        
+        # Создаем mock сообщение для тестирования
+        class MockMessage:
+            def __init__(self, text):
+                self.text = text
+                self.reply_to_message = MockMessage("test")  # Имитируем reply
+        
+        for text, expected in verification_tests:
+            mock_msg = MockMessage(text)
+            detected = is_admin_verification(mock_msg)
+            status = "✅" if detected == expected else "❌"
+            test_results.append(f"{status} Подтверждение '{text}': {detected}")
+        
+        # Формируем результат
+        all_passed = all("✅" in result for result in test_results)
+        
+        result_text = f"""
+🧪 Тест системы пресейвов v23 Plan 1:
+
+📊 ПРОВЕРКА ТАБЛИЦ:
+{chr(10).join([r for r in test_results[:3]])}
+
+🔍 ТЕСТ ДЕТЕКЦИИ ЗАЯВЛЕНИЙ:
+{chr(10).join([r for r in test_results[3:8]])}
+
+📱 ТЕСТ ИЗВЛЕЧЕНИЯ ПЛАТФОРМ:
+{chr(10).join([r for r in test_results[8:12]])}
+
+👮 ТЕСТ ДЕТЕКЦИИ ПОДТВЕРЖДЕНИЙ:
+{chr(10).join([r for r in test_results[12:]])}
+
+🎯 СТАТУС: {'✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ' if all_passed else '⚠️ ЕСТЬ ПРОБЛЕМЫ'}
+
+{f'✅ Система готова к План 2!' if all_passed else '❌ Требуется исправление ошибок'}
+        """
+        
+        bot.reply_to(message, result_text)
+        
+        # Логируем результаты
+        logger.info(f"🧪 PRESAVE_SYSTEM_TEST: {'PASSED' if all_passed else 'FAILED'}")
+        
+    except Exception as e:
+        logger.error(f"❌ Error in presave system test: {str(e)}")
+        bot.reply_to(message, f"❌ Ошибка тестирования: {str(e)}")
+
+# === ТЕСТОВЫЕ ОБРАБОТЧИКИ PRESAVE (ТОЛЬКО ЛОГИРОВАНИЕ) ===
+
+# Тестовый обработчик заявлений (только логирование)
+@bot.message_handler(func=lambda m: m.chat.id == GROUP_ID and m.message_thread_id == THREAD_ID and m.text and is_presave_claim(m.text))
+def handle_presave_claim_test(message):
+    """Тестовый обработчик заявлений о пресейвах - только логирование"""
+    if message.text and message.text.startswith('/'):
+        return  # Игнорируем команды
+    
+    if message.from_user.is_bot:
+        return  # Игнорируем ботов
+    
+    logger.info(f"🎵 PRESAVE_CLAIM_TEST: User {message.from_user.id} (@{message.from_user.username}) claimed presave")
+    logger.info(f"🎵 CLAIM_TEXT: {message.text}")
+    
+    platforms = extract_platforms(message.text)
+    if platforms:
+        logger.info(f"🎵 EXTRACTED_PLATFORMS: {platforms}")
+
+# Тестовый обработчик подтверждений (только логирование)  
+@bot.message_handler(func=lambda m: m.chat.id == GROUP_ID and m.message_thread_id == THREAD_ID and is_admin(m.from_user.id) and is_admin_verification(m))
+def handle_admin_verification_test(message):
+    """Тестовый обработчик подтверждений админов - только логирование"""
+    logger.info(f"🎵 ADMIN_VERIFICATION_TEST: Admin {message.from_user.id} (@{message.from_user.username}) verified something")
+    
+    if message.reply_to_message:
+        logger.info(f"🎵 REPLIED_TO: Message {message.reply_to_message.message_id} from user {message.reply_to_message.from_user.id}")
+        logger.info(f"🎵 VERIFICATION_TEXT: {message.text}")
 
 # === INLINE РЕЖИМЫ ===
 
@@ -1605,7 +1905,7 @@ def execute_stats_command(user_id: int, response_func, is_callback: bool = False
         current_mode = db.get_current_rate_mode()
         
         stats_text = f"""
-📊 Статистика бота v22:
+📊 Статистика бота v23 Plan 1:
 
 🤖 Статус: {status_emoji} {status_text}
 👥 Активных пользователей: {total_users}
@@ -1623,7 +1923,7 @@ def execute_stats_command(user_id: int, response_func, is_callback: bool = False
 
 🏆 Лидер: {f"@{top_user[0]} ({top_user[1]} ссылок)" if top_user else "пока нет"}
 
-🔗 Webhook: активен | Версия: v22 (с кнопками)
+🔗 Webhook: активен | Версия: v23 Plan 1 (база пресейвов)
         """
         
         if is_callback:
@@ -1657,7 +1957,7 @@ def execute_linkstats_command(user_id: int, response_func, is_callback: bool = F
                 response_func(text)
             return
         
-        stats_text = "📊 Статистика по ссылкам v22:\n\n"
+        stats_text = "📊 Статистика по ссылкам v23 Plan 1:\n\n"
         
         for i, (username, total_links, last_updated) in enumerate(users[:10], 1):
             rank_emoji, rank_name = get_user_rank(total_links)
@@ -1674,6 +1974,11 @@ def execute_linkstats_command(user_id: int, response_func, is_callback: bool = F
     except Exception as e:
         logger.error(f"❌ Error in LINKSTATS command: {str(e)}")
         error_text = "❌ Ошибка получения статистики"
+        if is_callback:
+            response_func(error_text, None)
+        else:
+            response_func(error_text)
+
 # === СПЕЦИАЛЬНЫЕ CALLBACK ФУНКЦИИ ===
 
 def execute_mystat_callback(call):
@@ -1694,6 +1999,8 @@ def execute_mystat_callback(call):
 📈 До первой ссылки: Поделитесь музыкой!
 
 💡 Начните делиться ссылками на музыку для роста в рейтинге!
+
+🆕 Скоро: Отслеживание ваших пресейвов!
             """
         else:
             username_db, total_links, last_updated = user_data
@@ -1735,6 +2042,8 @@ def execute_mystat_callback(call):
 {f"До {next_rank}: {progress_needed} ссылок" if progress_needed > 0 else "Максимальное звание достигнуто! 🎉"}
 
 💪 {'Продолжайте в том же духе!' if total_links > 0 else 'Начните делиться музыкой!'}
+
+🆕 Скоро: Система пресейвов с достижениями!
             """
         
         user_role = get_user_role(call.from_user.id)
@@ -1778,7 +2087,7 @@ def execute_botstat_callback(call):
         usage_percent = round((stats['hourly_responses'] / hourly_limit) * 100, 1)
         
         stat_text = f"""
-🤖 Статистика бота v22:
+🤖 Статистика бота v23 Plan 1:
 
 {status_emoji} Статус: {status_text}
 {current_limits['mode_emoji']} Режим: {current_mode.upper()}
@@ -1789,7 +2098,7 @@ def execute_botstat_callback(call):
 
 ⚠️ Статус: {'🟡 Приближение к лимиту' if usage_percent >= 80 else '✅ Всё в порядке'}
 
-🆕 v22: Inline кнопки + права пользователей
+🆕 v23 Plan 1: База данных пресейвов готова
         """
         
         markup = menus.create_back_button("stats_menu")
@@ -1810,7 +2119,7 @@ def execute_help_callback(call):
     
     if user_role == 'admin':
         help_text = """
-🤖 Команды бота v22 (Администратор):
+🤖 Команды бота v23 Plan 1 (Администратор):
 
 👑 Административные команды:
 • Активация/деактивация бота
@@ -1822,15 +2131,18 @@ def execute_help_callback(call):
 • Персональная статистика
 • Список ссылок
 
+🧪 Тестирование:
+• /test_presave_system — проверка инфраструктуры
+
 📱 Используйте кнопки для удобной навигации
 или команды для быстрого доступа.
 
-🆕 v22: Inline кнопки + права пользователей!
+🆕 v23 Plan 1: Фундамент системы пресейвов!
         """
         back_menu = "admin_menu"
     else:
         help_text = """
-🤖 Команды бота v22 (Пользователь):
+🤖 Команды бота v23 Plan 1 (Пользователь):
 
 📊 Доступная статистика:
 • Рейтинг пользователей
@@ -1846,6 +2158,8 @@ def execute_help_callback(call):
 
 📱 Используйте кнопки для навигации!
 🎵 Делитесь ссылками на музыку и растите в рейтинге!
+
+🆕 Скоро: Система подтверждения пресейвов!
         """
         back_menu = "user_menu"
     
@@ -1867,11 +2181,11 @@ def execute_activate_callback(call):
     welcome_text = f"""
 ✅ Бот активирован!
 
-🤖 Presave Reminder Bot v22 готов к работе
+🤖 Presave Reminder Bot v23 Plan 1 готов к работе
 🎯 Буду отвечать на сообщения со ссылками
 {current_limits['mode_emoji']} Режим: {current_mode.upper()}
 
-🆕 v22: Inline кнопки + права пользователей! 🎵
+🆕 v23 Plan 1: Фундамент системы пресейвов готов! 🎵
     """
     
     markup = menus.create_back_button("control_menu")
@@ -1919,7 +2233,7 @@ def execute_currentmode_callback(call):
         msgs_per_min = round(max_responses / 60, 2)
         
         current_text = f"""
-🎛️ Текущий режим лимитов v22:
+🎛️ Текущий режим лимитов v23 Plan 1:
 
 {mode_config['emoji']} **{mode_config['name']}**
 📝 {mode_config['description']}
@@ -2053,7 +2367,7 @@ def execute_recent_command(user_id: int, response_func, is_callback: bool = Fals
                 response_func(text)
             return
         
-        recent_text = f"🕐 Последние {len(recent_links)} ссылок v22:\n\n"
+        recent_text = f"🕐 Последние {len(recent_links)} ссылок v23 Plan 1:\n\n"
         
         for i, (link_url, username, timestamp) in enumerate(recent_links, 1):
             username_display = f"@{username}" if username else "Неизвестный"
@@ -2106,7 +2420,7 @@ def execute_alllinks_command(user_id: int, response_func, is_callback: bool = Fa
                 response_func(text)
             return
         
-        links_text = f"📋 Все ссылки в базе v22 (последние 50):\n\n"
+        links_text = f"📋 Все ссылки в базе v23 Plan 1 (последние 50):\n\n"
         
         for i, (link_url, username, timestamp) in enumerate(links[:20], 1):
             username_display = f"@{username}" if username else "Неизвестный"
@@ -2169,6 +2483,8 @@ def handle_username_input(message):
 🔗 Всего ссылок: {total_links}
 📅 Последняя активность: {last_updated[:16]}
 🏆 Звание: {rank_emoji} {rank_name}
+
+🆕 Скоро: Статистика пресейвов!
         """
         
         bot.reply_to(message, stat_text)
@@ -2214,7 +2530,7 @@ def cmd_bot_stat(message):
         usage_percent = round((stats['hourly_responses'] / hourly_limit) * 100, 1)
         
         stat_text = f"""
-🤖 Статистика бота v22:
+🤖 Статистика бота v23 Plan 1:
 
 {status_emoji} Статус: {status_text}
 {current_limits['mode_emoji']} Режим: {current_mode.upper()}
@@ -2225,7 +2541,7 @@ def cmd_bot_stat(message):
 
 ⚠️ Статус: {'🟡 Приближение к лимиту' if usage_percent >= 80 else '✅ Всё в порядке'}
 
-🆕 v22: Inline кнопки + права пользователей
+🆕 v23 Plan 1: База данных пресейвов готова
         """
         
         bot.reply_to(message, stat_text)
@@ -2273,7 +2589,7 @@ def cmd_recent_links(message):
 def cmd_modes(message):
     reload_rate_limit_modes()
     
-    modes_text = "🎛️ Доступные режимы лимитов (v22):\n\n"
+    modes_text = "🎛️ Доступные режимы лимитов (v23 Plan 1):\n\n"
     
     for mode_key, mode_config in RATE_LIMIT_MODES.items():
         is_current = "✅ " if mode_key == db.get_current_rate_mode() else "   "
@@ -2322,9 +2638,11 @@ def cmd_set_mode(message):
     
     if success:
         logger.info(f"✅ SETMODE successfully changed to {new_mode}")
+        bot.reply_to(message, result_text)
     else:
         logger.warning(f"❌ SETMODE failed: {result_text}")
-    
+        bot.reply_to(message, result_text)
+
 @bot.message_handler(commands=['activate'])
 @check_permissions(['admin'])
 def cmd_activate(message):
@@ -2338,7 +2656,7 @@ def cmd_activate(message):
     current_mode = db.get_current_rate_mode()
     
     welcome_text = f"""
-🤖 Presave Reminder Bot v22 активирован!
+🤖 Presave Reminder Bot v23 Plan 1 активирован!
 
 ✅ Готов к работе в топике "Пресейвы"
 🎯 Буду отвечать на сообщения со ссылками
@@ -2346,7 +2664,7 @@ def cmd_activate(message):
 ⚙️ Управление: /help или /menu
 🛑 Отключить: /deactivate
 
-🆕 v22: Inline кнопки + права пользователей! 🎵
+🆕 v23 Plan 1: Фундамент системы пресейвов готов! 🎵
     """
     
     bot.reply_to(message, welcome_text)
@@ -2384,6 +2702,8 @@ def cmd_user_stat(message):
 🔗 Всего ссылок: {total_links}
 📅 Последняя активность: {last_updated[:16]}
 🏆 Звание: {rank_emoji} {rank_name}
+
+🆕 Скоро: Статистика пресейвов!
         """
         
         bot.reply_to(message, stat_text)
@@ -2414,7 +2734,7 @@ def cmd_current_mode(message):
         msgs_per_min = round(max_responses / 60, 2)
         
         current_text = f"""
-🎛️ Текущий режим лимитов v22:
+🎛️ Текущий режим лимитов v23 Plan 1:
 
 {mode_config['emoji']} **{mode_config['name']}**
 📝 {mode_config['description']}
@@ -2508,7 +2828,7 @@ def cmd_test_regex(message):
     test_text = args[1]
     links = extract_links(test_text)
     
-    result_text = f"🧪 Результат тестирования v22:\n\n📝 Текст: {test_text}\n\n"
+    result_text = f"🧪 Результат тестирования v23 Plan 1:\n\n📝 Текст: {test_text}\n\n"
     
     if links:
         result_text += f"✅ Найдено ссылок: {len(links)}\n"
@@ -2573,6 +2893,39 @@ def handle_topic_message(message):
     except Exception as e:
         logger.error(f"💥 ERROR: Exception in message processing: {str(e)}")
 
+# === ФУНКЦИИ ИНИЦИАЛИЗАЦИИ ===
+
+def log_presave_system_startup():
+    """Логирование запуска системы пресейвов"""
+    logger.info("🎵 PRESAVE_SYSTEM: Initializing v23 Plan 1 features...")
+    
+    try:
+        # Проверяем таблицы
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute("SELECT COUNT(*) FROM presave_claims")
+            claims_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM presave_verifications")
+            verifications_count = cursor.fetchone()[0]
+            
+            cursor.execute("SELECT COUNT(*) FROM user_sessions")
+            sessions_count = cursor.fetchone()[0]
+        
+        logger.info(f"🎵 PRESAVE_DB: {claims_count} claims, {verifications_count} verifications, {sessions_count} sessions")
+        
+        # Проверяем паттерны
+        test_detection = is_presave_claim("сделал пресейв")
+        platform_detection = extract_platforms("на спотифай")
+        
+        logger.info(f"🎵 PRESAVE_DETECTION: Claims={test_detection}, Platforms={len(platform_detection)>0}")
+        
+        logger.info("✅ PRESAVE_SYSTEM: v23 Plan 1 foundation initialized successfully")
+        
+    except Exception as e:
+        logger.error(f"❌ PRESAVE_SYSTEM: Initialization error: {str(e)}")
+
 def setup_webhook():
     """Настройка webhook"""
     try:
@@ -2591,29 +2944,34 @@ def setup_webhook():
         return False
 
 def main():
-    """Основная функция запуска бота v22"""
+    """Основная функция запуска бота v23 Plan 1"""
     try:
-        logger.info("🚀 STARTUP: Starting Presave Reminder Bot v22")
+        logger.info("🚀 STARTUP: Starting Presave Reminder Bot v23 Plan 1")
         logger.info(f"🔧 CONFIG: GROUP_ID={GROUP_ID}, THREAD_ID={THREAD_ID}")
-        logger.info(f"📱 FEATURES: Inline buttons, user permissions, state management")
+        logger.info(f"📱 FEATURES: Inline buttons, user permissions, presave foundation")
         
         # Инициализация базы данных
         db.init_db()
         
+        # Инициализация системы пресейвов
+        log_presave_system_startup()
+        
+        # Загрузка режимов
         reload_rate_limit_modes()
         current_mode = db.get_current_rate_mode()
         current_limits = get_current_limits()
         
-        logger.info("🤖 Presave Reminder Bot v22 запущен!")
+        logger.info("🤖 Presave Reminder Bot v23 Plan 1 запущен!")
         logger.info(f"👥 Группа: {GROUP_ID}")
         logger.info(f"📋 Топик: {THREAD_ID}")
         logger.info(f"👑 Админы: {ADMIN_IDS}")
         logger.info(f"🎛️ РЕЖИМ: {current_limits['mode_name']} ({current_limits['max_responses_per_hour']}/час)")
         logger.info(f"📱 INLINE: Поддержка кнопок активна")
         logger.info(f"👥 USER_PERMISSIONS: Расширенные права пользователей")
+        logger.info(f"🎵 PRESAVE_FOUNDATION: Базовая инфраструктура готова")
         
         if setup_webhook():
-            logger.info("🔗 Webhook режим активен с поддержкой inline кнопок")
+            logger.info("🔗 Webhook режим активен с поддержкой v23 Plan 1")
         else:
             logger.error("❌ Ошибка настройки webhook")
             return
@@ -2621,7 +2979,7 @@ def main():
         with socketserver.TCPServer(("", WEBHOOK_PORT), WebhookHandler) as httpd:
             logger.info(f"🌐 Webhook сервер запущен на порту {WEBHOOK_PORT}")
             logger.info(f"🔗 URL: {WEBHOOK_URL}")
-            logger.info("✅ READY: Bot v22 is fully operational with inline buttons & user permissions")
+            logger.info("✅ READY: Bot v23 Plan 1 is fully operational with presave foundation!")
             httpd.serve_forever()
         
     except Exception as e:
