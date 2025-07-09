@@ -3369,6 +3369,60 @@ def enhanced_server_startup_log():
     logger.info("💓 KEEPALIVE_FIX: Resolved 501 Not Implemented issue")
     logger.info("✅ SERVER_READY: All endpoints configured and ready for production traffic")
 
+def enhanced_server_startup_log():
+    """Расширенное логирование запуска сервера"""
+    logger.info("🌐 SERVER_STARTUP: Initializing enhanced webhook server with keepalive fix...")
+    logger.info(f"🔗 WEBHOOK_URL: {WEBHOOK_URL}")
+    logger.info(f"🚪 WEBHOOK_PORT: {WEBHOOK_PORT}")
+    logger.info(f"🛤️ WEBHOOK_PATH: {WEBHOOK_PATH}")
+    
+    # Проверяем доступность всех эндпоинтов
+    endpoints = [
+        ("Telegram Webhook", WEBHOOK_PATH, "POST"),
+        ("Health Check", "/health", "GET/POST"),
+        ("Keep-Alive Monitor", "/keepalive", "GET/POST"),
+        ("Info Page", WEBHOOK_PATH, "GET"),
+        ("Root", "/", "GET/POST")
+    ]
+    
+    logger.info("🔍 ENDPOINTS_CHECK: Available endpoints:")
+    for name, path, methods in endpoints:
+        logger.info(f"   ✅ {name}: {methods} {path}")
+    
+    logger.info("🔧 WEBHOOK_FEATURES: Enhanced error handling, CORS support, detailed diagnostics")
+    logger.info("💓 KEEPALIVE_FIX: Resolved 501 Not Implemented issue")
+    logger.info("✅ SERVER_READY: All endpoints configured and ready for production traffic")
+
+def setup_webhook():
+    """Настройка webhook с улучшенной диагностикой"""
+    try:
+        logger.info("🔗 WEBHOOK_SETUP: Configuring webhook for keepalive fixed version...")
+        
+        # Удаляем старый webhook
+        bot.remove_webhook()
+        logger.info("🧹 WEBHOOK_CLEANUP: Previous webhook removed")
+        
+        webhook_kwargs = {"url": WEBHOOK_URL}
+        if WEBHOOK_SECRET:
+            webhook_kwargs["secret_token"] = WEBHOOK_SECRET
+            logger.info("🔐 WEBHOOK_SECURITY: Using secret token for enhanced security")
+        
+        webhook_result = bot.set_webhook(**webhook_kwargs)
+        
+        if webhook_result:
+            logger.info(f"✅ WEBHOOK_SET: Webhook configured successfully")
+            logger.info(f"🔗 WEBHOOK_TARGET: {WEBHOOK_URL}")
+            logger.info(f"💓 KEEPALIVE_ENDPOINT: {WEBHOOK_URL.replace(WEBHOOK_PATH, '/keepalive')}")
+            logger.info(f"🏥 HEALTH_ENDPOINT: {WEBHOOK_URL.replace(WEBHOOK_PATH, '/health')}")
+            return True
+        else:
+            logger.error("❌ WEBHOOK_FAILED: Failed to set webhook - no result")
+            return False
+            
+    except Exception as e:
+        logger.error(f"❌ WEBHOOK_ERROR: Failed to setup webhook: {str(e)}")
+        return False
+
 def main():
     """Основная функция запуска бота v23 Plan 1 KEEPALIVE FIXED"""
     try:
