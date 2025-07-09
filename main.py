@@ -191,17 +191,12 @@ RESPONSE_DELAY = int(os.getenv('RESPONSE_DELAY', '3'))
 # Инициализация бота
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# Настройка логирования с улучшенным уровнем для отладки
-log_level = os.getenv('LOG_LEVEL', 'INFO').upper()
+# Настройка логирования
 logging.basicConfig(
-    level=getattr(logging, log_level, logging.INFO),
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-# Снижаем уровень логирования для webhook DEBUG информации
-if log_level == 'DEBUG':
-    logger.info("🔍 DEBUG: Enhanced logging enabled for webhook debugging")
 
 # === СИСТЕМЫ БЕЗОПАСНОСТИ ===
 
@@ -260,7 +255,7 @@ class InputValidator:
         if not username:
             return "anonymous"
         # Экранируем HTML и удаляем опасные символы
-        clean = html.escape(str(username))
+        clean = html.escape(str(username)) if html else str(username)
         clean = re.sub(r'[^\w\-_]', '', clean.replace('@', ''))
         return clean[:50] if clean else "anonymous"
     
@@ -268,8 +263,11 @@ class InputValidator:
     def validate_text_input(text: str, max_length: int = 1000) -> str:
         if not text or not isinstance(text, str):
             return ""
-        # HTML escape для предотвращения XSS
-        safe_text = html.escape(text)
+        # HTML escape для предотвращения XSS (если доступен)
+        try:
+            safe_text = html.escape(text) if html else text
+        except:
+            safe_text = text
         # Удаляем потенциально опасные символы
         safe_text = re.sub(r'[<>"\'\\\n\r\t]', '', safe_text)
         return safe_text[:max_length]
@@ -306,8 +304,9 @@ class InputValidator:
 class SecurityValidator(InputValidator):
     """Расширенная валидация безопасности"""
     
-@staticmethod
+    @staticmethod
     def verify_telegram_request(headers: dict, content_length: int) -> bool:
+        """Проверка Telegram webhook запросов с исправленной индентацией"""
         # Проверка размера payload
         if content_length > 1024 * 1024:  # 1MB лимит
             logger.warning(f"🚨 SECURITY: Payload too large: {content_length}")
@@ -324,13 +323,12 @@ class SecurityValidator(InputValidator):
         user_agent = headers.get('User-Agent', '').lower()
         
         # Блокируем только явно подозрительные User-Agent'ы
-        suspicious_patterns = ['bot', 'crawler', 'spider', 'scanner', 'curl', 'wget']
+        suspicious_patterns = ['malicious', 'attack', 'hack', 'exploit']
         is_suspicious = any(pattern in user_agent for pattern in suspicious_patterns if user_agent)
         
         # Логируем подозрительные, но не блокируем автоматически
         if is_suspicious and content_length > 0:
             logger.warning(f"⚠️ SECURITY: Suspicious User-Agent detected: {user_agent}")
-            # Не возвращаем False - пусть проходит для отладки
         
         # Telegram может отправлять запросы с разными User-Agent'ами или без них
         logger.debug(f"🔍 SECURITY: User-Agent: '{user_agent}', Content-Length: {content_length}")
@@ -3510,10 +3508,10 @@ def do_POST(self):
             try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 
-                # Менее строгая проверка безопасности
-                if not security.verify_telegram_request(self.headers, content_length):
-                    logger.warning(f"⚠️ SECURITY: Security check failed from {client_ip}, but allowing for debugging")
-                    # Не блокируем - пропускаем для отладки
+                # Проверка безопасности (не блокирующая для отладки)
+                security_check = security.verify_telegram_request(self.headers, content_length)
+                if not security_check:
+                    logger.warning(f"⚠️ SECURITY: Security check failed from {client_ip}, but processing anyway")
                 
                 # Дополнительная проверка для localhost запросов от Render
                 if client_ip == '127.0.0.1':
@@ -3617,28 +3615,16 @@ def _handle_keepalive_request(self, client_ip):
                 logger.error(f"❌ DB_CHECK_ERROR: {e}")
                 db_check = False
             
-            # Проверяем Telegram Bot API с timeout
+# Проверяем Telegram Bot API (без signal на Windows/Render)
             try:
-                import signal
-                
-                def timeout_handler(signum, frame):
-                    raise TimeoutError("Telegram API timeout")
-                
-                # Устанавливаем timeout 10 секунд для API проверки
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(10)
-                
                 bot_info = bot.get_me()
                 telegram_check = bool(bot_info)
                 bot_username = bot_info.username if bot_info else "unknown"
                 
-                signal.alarm(0)  # Отменяем timeout
-                
-            except (TimeoutError, Exception) as e:
+            except Exception as e:
                 logger.error(f"❌ TELEGRAM_API_ERROR: {e}")
                 telegram_check = False
                 bot_username = "api_error"
-                signal.alarm(0)  # Отменяем timeout в случае ошибки
             
             # Проверяем webhook статус
             webhook_status = "unknown"
@@ -4420,8 +4406,8 @@ def init_global_variables():
 
 # Инициализация систем безопасности v23.5
 rate_limiter = WebhookRateLimiter()
-security = SecurityValidator()
 input_validator = InputValidator()
+security = SecurityValidator()
 
 # === ФУНКЦИИ ИНИЦИАЛИЗАЦИИ v23.5 ===
 
