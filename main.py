@@ -1,6 +1,6 @@
-# Current version: v21-fixed
-# Presave Reminder Bot - Версия с исправлениями безопасности и критических багов
-# Основано на стабильной v20, добавлены критические исправления + фикс webhook security для production
+# Current version: v22
+# Presave Reminder Bot - Версия с inline кнопками и пользовательскими правами
+# Основано на стабильной v21-fixed, добавлены кнопки и расширенные права пользователей
 
 import logging
 import re
@@ -10,8 +10,6 @@ import threading
 import os
 import json
 import urllib.parse
-import hmac
-import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 from http.server import HTTPServer, BaseHTTPRequestHandler
@@ -22,6 +20,7 @@ from queue import Queue
 
 import telebot
 from telebot import types
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from dotenv import load_dotenv
 
 # Загрузка переменных окружения
@@ -34,51 +33,63 @@ THREAD_ID = int(os.getenv('THREAD_ID'))  # 3
 ADMIN_IDS = [int(x) for x in os.getenv('ADMIN_IDS', '').split(',') if x]
 DEFAULT_REMINDER = os.getenv('REMINDER_TEXT', '🎧 Напоминаем: не забудьте сделать пресейв артистов выше! ♥️')
 
-# === НОВЫЕ НАСТРОЙКИ БЕЗОПАСНОСТИ v21 ===
+# === НАСТРОЙКИ БЕЗОПАСНОСТИ ===
 WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', None)
 DB_POOL_SIZE = int(os.getenv('DB_POOL_SIZE', '5'))
 WEBHOOK_RATE_LIMIT = int(os.getenv('WEBHOOK_RATE_LIMIT', '100'))
 
-# === ИСПРАВЛЕННАЯ СИСТЕМА РЕЖИМОВ ЛИМИТОВ ===
+# === СИСТЕМА ПРАВ ПОЛЬЗОВАТЕЛЕЙ v22 ===
+USER_PERMISSIONS = {
+    'admin': 'all',  # Все команды
+    'user': ['help', 'linkstats', 'topusers', 'userstat', 'mystat', 'alllinks', 'recent']
+}
+
+# === ПОЛЬЗОВАТЕЛЬСКИЕ СОСТОЯНИЯ ===
+USER_STATES = {
+    'waiting_username': 'Ожидание ввода username',
+    'waiting_message': 'Ожидание ввода сообщения',
+    'waiting_mode': 'Ожидание выбора режима'
+}
+
+# === СИСТЕМА РЕЖИМОВ ЛИМИТОВ ===
 def load_rate_limit_modes():
     """Загружает конфигурацию режимов из переменных окружения"""
     return {
         'conservative': {
             'name': '🟢 CONSERVATIVE',
             'description': 'Безопасный режим - 5% от лимита Telegram',
-            'max_responses_per_hour': int(os.getenv('CONSERVATIVE_MAX_HOUR', '60')),  # 60/час = 1/мин
-            'min_cooldown_seconds': int(os.getenv('CONSERVATIVE_COOLDOWN', '60')),   # 1 минута между ответами
+            'max_responses_per_hour': int(os.getenv('CONSERVATIVE_MAX_HOUR', '60')),
+            'min_cooldown_seconds': int(os.getenv('CONSERVATIVE_COOLDOWN', '60')),
             'emoji': '🐢',
             'risk': 'Минимальный'
         },
         'normal': {
             'name': '🟡 NORMAL', 
             'description': 'Рабочий режим - 15% от лимита Telegram',
-            'max_responses_per_hour': int(os.getenv('NORMAL_MAX_HOUR', '180')),     # 180/час = 3/мин
-            'min_cooldown_seconds': int(os.getenv('NORMAL_COOLDOWN', '20')),        # 20 секунд между ответами
+            'max_responses_per_hour': int(os.getenv('NORMAL_MAX_HOUR', '180')),
+            'min_cooldown_seconds': int(os.getenv('NORMAL_COOLDOWN', '20')),
             'emoji': '⚖️',
             'risk': 'Низкий'
         },
         'burst': {
             'name': '🟠 BURST',
             'description': 'Быстрый режим - 50% от лимита Telegram',
-            'max_responses_per_hour': int(os.getenv('BURST_MAX_HOUR', '600')),      # 600/час = 10/мин
-            'min_cooldown_seconds': int(os.getenv('BURST_COOLDOWN', '6')),          # 6 секунд между ответами
+            'max_responses_per_hour': int(os.getenv('BURST_MAX_HOUR', '600')),
+            'min_cooldown_seconds': int(os.getenv('BURST_COOLDOWN', '6')),
             'emoji': '⚡',
             'risk': 'Средний'
         },
         'admin_burst': {
             'name': '🔴 ADMIN_BURST',
             'description': 'Максимальный режим - 100% лимита групп (только админы)',
-            'max_responses_per_hour': int(os.getenv('ADMIN_BURST_MAX_HOUR', '1200')), # 1200/час = 20/мин (группа лимит)
-            'min_cooldown_seconds': int(os.getenv('ADMIN_BURST_COOLDOWN', '3')),       # 3 секунды между ответами
+            'max_responses_per_hour': int(os.getenv('ADMIN_BURST_MAX_HOUR', '1200')),
+            'min_cooldown_seconds': int(os.getenv('ADMIN_BURST_COOLDOWN', '3')),
             'emoji': '🚨',
             'risk': 'ВЫСОКИЙ',
             'admin_only': True
         }
     }
 
-# Глобальная переменная для режимов
 RATE_LIMIT_MODES = load_rate_limit_modes()
 
 # Остальные константы безопасности
@@ -103,7 +114,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# === НОВЫЕ СИСТЕМЫ БЕЗОПАСНОСТИ v21 ===
+# === СИСТЕМЫ БЕЗОПАСНОСТИ ===
 
 class WebhookRateLimiter:
     """Rate limiting для webhook endpoint"""
@@ -116,18 +127,15 @@ class WebhookRateLimiter:
     def is_allowed(self, client_ip: str) -> bool:
         with self.lock:
             now = time.time()
-            # Очищаем старые запросы
             self.requests[client_ip] = [
                 req_time for req_time in self.requests[client_ip] 
                 if now - req_time < self.window_seconds
             ]
             
-            # Проверяем лимит
             if len(self.requests[client_ip]) >= self.max_requests:
                 logger.warning(f"🚨 RATE_LIMIT: Blocked {client_ip} ({len(self.requests[client_ip])} requests)")
                 return False
             
-            # Добавляем текущий запрос
             self.requests[client_ip].append(now)
             return True
 
@@ -138,10 +146,9 @@ class DatabasePool:
         self.pool = Queue(maxsize=pool_size)
         self.lock = threading.Lock()
         
-        # Создаем пул соединений
         for _ in range(pool_size):
             conn = sqlite3.connect(db_path, check_same_thread=False)
-            conn.execute("PRAGMA journal_mode=WAL")  # Улучшение производительности
+            conn.execute("PRAGMA journal_mode=WAL")
             conn.execute("PRAGMA synchronous=NORMAL")
             conn.execute("PRAGMA cache_size=10000")
             self.pool.put(conn)
@@ -161,48 +168,32 @@ class SecurityValidator:
     
     @staticmethod
     def sanitize_username(username: str) -> str:
-        """Безопасная санитизация username"""
         if not username:
             return "anonymous"
-        
-        # Удаляем все кроме букв, цифр и подчеркиваний
         clean = re.sub(r'[^\w]', '', username.replace('@', ''))
-        
-        # Ограничиваем длину
         return clean[:50] if clean else "anonymous"
     
     @staticmethod
     def validate_text_input(text: str, max_length: int = 1000) -> str:
-        """Валидация текстового ввода"""
         if not text or not isinstance(text, str):
             return ""
-        
-        # Удаляем потенциально опасные символы
         safe_text = re.sub(r'[<>"\']', '', text)
         return safe_text[:max_length]
     
     @staticmethod
     def verify_telegram_request(headers: dict, content_length: int) -> bool:
-        """Проверка подлинности webhook от Telegram - ИСПРАВЛЕНО для production"""
-        
-        # Проверка размера (критично)
-        if content_length > 1024 * 1024:  # 1MB лимит
+        if content_length > 1024 * 1024:
             logger.warning(f"🚨 SECURITY: Payload too large: {content_length}")
             return False
         
-        # Проверка secret token (если установлен) - основная защита
         if WEBHOOK_SECRET:
             received_token = headers.get('X-Telegram-Bot-Api-Secret-Token')
             if received_token != WEBHOOK_SECRET:
                 logger.warning(f"🚨 SECURITY: Invalid webhook secret")
                 return False
         
-        # Логируем User-Agent для диагностики, но НЕ блокируем
         user_agent = headers.get('User-Agent', 'Not provided')
         logger.info(f"🔍 WEBHOOK_UA: User-Agent: {user_agent}")
-        
-        # В production Telegram может использовать разные User-Agent'ы или прокси
-        # Поэтому полагаемся на secret token и размер payload
         
         return True
 
@@ -210,14 +201,40 @@ class SecurityValidator:
 rate_limiter = WebhookRateLimiter()
 security = SecurityValidator()
 
+# === СИСТЕМА РОЛЕЙ И ПРАВ v22 ===
+
+def get_user_role(user_id: int) -> str:
+    """Определение роли пользователя"""
+    return 'admin' if user_id in ADMIN_IDS else 'user'
+
+def can_execute_command(user_id: int, command: str) -> bool:
+    """Проверка прав на выполнение команды"""
+    role = get_user_role(user_id)
+    if role == 'admin':
+        return True
+    return command in USER_PERMISSIONS.get('user', [])
+
+def check_permissions(allowed_roles: list):
+    """Декоратор для проверки прав доступа"""
+    def decorator(func):
+        def wrapper(message):
+            user_role = get_user_role(message.from_user.id)
+            if user_role in allowed_roles or 'admin' in allowed_roles:
+                return func(message)
+            else:
+                bot.reply_to(message, "❌ У вас нет прав для выполнения этой команды")
+                logger.warning(f"🚫 ACCESS_DENIED: User {message.from_user.id} tried to execute {func.__name__}")
+                return None
+        return wrapper
+    return decorator
+
 # === ФУНКЦИИ УПРАВЛЕНИЯ РЕЖИМАМИ ===
 
 def get_current_limits():
-    """Получение текущих лимитов - ИСПРАВЛЕНО"""
+    """Получение текущих лимитов"""
     try:
         current_mode = db.get_current_rate_mode()
         
-        # Проверяем что режим существует
         if current_mode not in RATE_LIMIT_MODES:
             logger.warning(f"Unknown rate mode: {current_mode}, falling back to conservative")
             current_mode = 'conservative'
@@ -233,7 +250,6 @@ def get_current_limits():
         }
     except Exception as e:
         logger.error(f"Error getting current limits: {e}")
-        # Fallback к безопасным значениям
         return {
             'max_responses_per_hour': 60,
             'min_cooldown_seconds': 60, 
@@ -248,37 +264,30 @@ def set_rate_limit_mode(new_mode: str, user_id: int) -> tuple[bool, str]:
     
     mode_config = RATE_LIMIT_MODES[new_mode]
     
-    # Проверка админских прав для admin_burst
     if mode_config.get('admin_only', False) and not is_admin(user_id):
         return False, f"❌ Режим {mode_config['name']} доступен только администраторам"
     
     old_mode = db.get_current_rate_mode()
     old_config = RATE_LIMIT_MODES.get(old_mode, {})
     
-    # Сохраняем новый режим в базу данных
     db.set_current_rate_mode(new_mode)
-    
-    # Сброс текущих лимитов при смене режима
     db.reset_rate_limits()
     
     change_text = f"""
 🔄 Режим лимитов изменён!
 
 📉 Было: {old_config.get('name', 'Неизвестно')}
-• Ответов/час: {old_config.get('max_responses_per_hour', 'N/A')}
-• Cooldown: {old_config.get('min_cooldown_seconds', 'N/A')} сек
-
 📈 Стало: {mode_config['name']}
+
+⚡ Новые лимиты:
 • Ответов/час: {mode_config['max_responses_per_hour']}
 • Cooldown: {mode_config['min_cooldown_seconds']} сек
+• Риск: {mode_config['risk']}
 
-⚠️ Уровень риска: {mode_config['risk']}
-
-✅ Лимиты сброшены, бот готов к работе в новом режиме
+✅ Готово к работе в новом режиме
     """
     
     logger.info(f"🔄 RATE_MODE: Changed from {old_mode} to {new_mode} by user {user_id}")
-    logger.info(f"📊 NEW_LIMITS: {mode_config['max_responses_per_hour']}/hour, {mode_config['min_cooldown_seconds']}s cooldown")
     
     return True, change_text
 
@@ -288,6 +297,8 @@ def reload_rate_limit_modes():
     RATE_LIMIT_MODES = load_rate_limit_modes()
     logger.info("🔄 RELOAD: Rate limit modes reloaded from environment variables")
 
+# === БАЗА ДАННЫХ С РАСШИРЕНИЯМИ v22 ===
+
 class Database:
     def __init__(self, db_path: str = "bot.db"):
         self.db_path = db_path
@@ -295,15 +306,14 @@ class Database:
         logger.info(f"✅ DATABASE: Initialized with connection pooling")
     
     def get_connection(self):
-        """Получение соединения из пула"""
         return self.pool.get_connection()
     
     def init_db(self):
-        """Инициализация базы данных с улучшениями"""
+        """Инициализация базы данных с новыми таблицами v22"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # Таблица пользователей и их ссылок
+            # Существующие таблицы
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS user_links (
                     user_id INTEGER PRIMARY KEY,
@@ -313,7 +323,6 @@ class Database:
                 )
             ''')
             
-            # Детальная история ссылок
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS link_history (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -324,7 +333,6 @@ class Database:
                 )
             ''')
             
-            # Логи ответов бота
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS bot_responses (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -334,7 +342,6 @@ class Database:
                 )
             ''')
             
-            # Настройки бота
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
@@ -342,7 +349,6 @@ class Database:
                 )
             ''')
             
-            # Активность бота
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS bot_activity (
                     id INTEGER PRIMARY KEY,
@@ -353,7 +359,6 @@ class Database:
                 )
             ''')
             
-            # Лимиты и cooldown
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS rate_limits (
                     id INTEGER PRIMARY KEY,
@@ -363,10 +368,23 @@ class Database:
                 )
             ''')
             
-            # Создаем индексы для оптимизации
+            # === НОВЫЕ ТАБЛИЦЫ v22 ===
+            
+            # Сессии пользователей для состояний
+            cursor.execute('''
+                CREATE TABLE IF NOT EXISTS user_sessions (
+                    user_id INTEGER PRIMARY KEY,
+                    current_state TEXT,
+                    data TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            ''')
+            
+            # Создаем индексы
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_link_history_timestamp ON link_history(timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_bot_responses_timestamp ON bot_responses(timestamp)')
             cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_links_total ON user_links(total_links)')
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_user_sessions_state ON user_sessions(current_state)')
             
             # Инициализация базовых записей
             cursor.execute('INSERT OR IGNORE INTO bot_activity (id, is_active) VALUES (1, 1)')
@@ -379,27 +397,58 @@ class Database:
                 'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
                 ('rate_limit_mode', 'conservative')
             )
+            cursor.execute(
+                'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
+                ('inline_mode', 'hybrid')
+            )
             
             conn.commit()
-            logger.info("✅ DATABASE: Database initialized successfully with v21 improvements")
+            logger.info("✅ DATABASE: Database initialized successfully with v22 improvements")
 
+    # === МЕТОДЫ ДЛЯ СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЕЙ ===
+    
+    def set_user_state(self, user_id: int, state: str, data: str = None):
+        """Установка состояния пользователя"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO user_sessions (user_id, current_state, data)
+                VALUES (?, ?, ?)
+            ''', (user_id, state, data))
+            conn.commit()
+    
+    def get_user_state(self, user_id: int) -> tuple[str, str]:
+        """Получение состояния пользователя"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT current_state, data FROM user_sessions WHERE user_id = ?
+            ''', (user_id,))
+            result = cursor.fetchone()
+            return result if result else (None, None)
+    
+    def clear_user_state(self, user_id: int):
+        """Очистка состояния пользователя"""
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM user_sessions WHERE user_id = ?', (user_id,))
+            conn.commit()
+
+    # === ОСТАЛЬНЫЕ МЕТОДЫ (из v21) ===
+    
     def add_user_links(self, user_id: int, username: str, links: list, message_id: int):
-        """Добавление ссылок пользователя с безопасной валидацией"""
-        # Валидация входных данных
         safe_username = security.sanitize_username(username)
         
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
-            # Обновляем счётчик пользователя
             cursor.execute('''
                 INSERT OR REPLACE INTO user_links (user_id, username, total_links, last_updated)
                 VALUES (?, ?, COALESCE((SELECT total_links FROM user_links WHERE user_id = ?), 0) + ?, CURRENT_TIMESTAMP)
             ''', (user_id, safe_username, user_id, len(links)))
             
-            # Добавляем детальную историю
             for link in links:
-                safe_link = security.validate_text_input(link, 2000)  # Ограничиваем длину ссылки
+                safe_link = security.validate_text_input(link, 2000)
                 cursor.execute('''
                     INSERT INTO link_history (user_id, link_url, message_id)
                     VALUES (?, ?, ?)
@@ -408,7 +457,6 @@ class Database:
             conn.commit()
 
     def log_bot_response(self, user_id: int, response_text: str):
-        """Логирование ответа бота"""
         safe_response = security.validate_text_input(response_text, 4000)
         
         with self.get_connection() as conn:
@@ -420,7 +468,6 @@ class Database:
             conn.commit()
 
     def is_bot_active(self) -> bool:
-        """Проверка активности бота"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT is_active FROM bot_activity WHERE id = 1')
@@ -428,14 +475,12 @@ class Database:
             return bool(result[0]) if result else False
 
     def set_bot_active(self, active: bool):
-        """Установка статуса активности"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('UPDATE bot_activity SET is_active = ? WHERE id = 1', (active,))
             conn.commit()
 
     def can_send_response(self) -> tuple[bool, str]:
-        """Проверка лимитов с динамическим обновлением"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -450,19 +495,16 @@ class Database:
             hourly_responses, last_hour_reset, cooldown_until = result
             now = datetime.now()
             
-            # Получаем АКТУАЛЬНЫЕ лимиты из текущего режима
             current_limits = get_current_limits()
             max_responses = current_limits['max_responses_per_hour'] 
             cooldown_seconds = current_limits['min_cooldown_seconds']
             
-            # Проверяем cooldown
             if cooldown_until:
                 cooldown_time = datetime.fromisoformat(cooldown_until)
                 if now < cooldown_time:
                     remaining = int((cooldown_time - now).total_seconds())
-                    return False, f"Cooldown активен. Осталось: {remaining} сек (режим: {current_limits['mode_name']})"
+                    return False, f"Cooldown активен. Осталось: {remaining} сек"
             
-            # Сброс почасового счётчика
             if last_hour_reset:
                 last_reset = datetime.fromisoformat(last_hour_reset)
                 if now - last_reset > timedelta(hours=1):
@@ -473,19 +515,16 @@ class Database:
                     ''', (now.isoformat(),))
                     hourly_responses = 0
             
-            # Проверяем почасовой лимит
             if hourly_responses >= max_responses:
-                return False, f"Достигнут лимит {max_responses} ответов в час (режим: {current_limits['mode_name']})"
+                return False, f"Достигнут лимит {max_responses} ответов в час"
             
             return True, "OK"
 
     def update_response_limits(self):
-        """Обновление лимитов с учетом текущего режима"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             now = datetime.now()
             
-            # Получаем АКТУАЛЬНЫЙ cooldown из текущего режима
             current_limits = get_current_limits()
             cooldown_seconds = current_limits['min_cooldown_seconds']
             cooldown_until = now + timedelta(seconds=cooldown_seconds)
@@ -500,7 +539,6 @@ class Database:
             conn.commit()
 
     def reset_rate_limits(self):
-        """Сброс лимитов при смене режима"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
@@ -511,10 +549,8 @@ class Database:
                 WHERE id = 1
             ''', (datetime.now().isoformat(),))
             conn.commit()
-            logger.info("🔄 RATE_RESET: Rate limits reset due to mode change")
 
     def get_user_stats(self, username: str = None):
-        """Получение статистики пользователей с безопасным поиском"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -539,31 +575,26 @@ class Database:
                 return result
 
     def get_bot_stats(self):
-        """Статистика работы бота - ИСПРАВЛЕНО"""
         with self.get_connection() as conn:
             try:
                 cursor = conn.cursor()
                 
-                # Получаем лимиты с проверкой
                 cursor.execute('''
                     SELECT hourly_responses, cooldown_until FROM rate_limits WHERE id = 1
                 ''')
                 limits = cursor.fetchone()
                 
-                # Получаем активность с проверкой
                 cursor.execute('''
                     SELECT is_active, last_response_time FROM bot_activity WHERE id = 1
                 ''')
                 activity = cursor.fetchone()
                 
-                # Считаем ответы за сегодня с проверкой
                 cursor.execute('''
                     SELECT COUNT(*) FROM bot_responses 
                     WHERE DATE(timestamp) = DATE('now')
                 ''')
                 today_responses = cursor.fetchone()
                 
-                # Получаем АКТУАЛЬНЫЕ лимиты из текущего режима с защитой
                 current_limits = get_current_limits()
                 
                 return {
@@ -577,7 +608,6 @@ class Database:
                 
             except Exception as e:
                 logger.error(f"Database error in get_bot_stats: {e}")
-                # Возвращаем безопасные значения
                 return {
                     'hourly_responses': 0,
                     'hourly_limit': 60,
@@ -588,14 +618,12 @@ class Database:
                 }
 
     def clear_link_history(self):
-        """Очистка истории ссылок (счётчики остаются)"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('DELETE FROM link_history')
             conn.commit()
 
     def get_reminder_text(self) -> str:
-        """Получение текста напоминания"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT value FROM settings WHERE key = ?', ('reminder_text',))
@@ -603,7 +631,6 @@ class Database:
             return result[0] if result else DEFAULT_REMINDER
 
     def set_reminder_text(self, text: str):
-        """Установка текста напоминания с валидацией"""
         safe_text = security.validate_text_input(text, 4000)
         
         with self.get_connection() as conn:
@@ -614,7 +641,6 @@ class Database:
             conn.commit()
 
     def get_current_rate_mode(self) -> str:
-        """Получение текущего режима лимитов"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('SELECT value FROM settings WHERE key = ?', ('rate_limit_mode',))
@@ -622,17 +648,223 @@ class Database:
             return result[0] if result else 'conservative'
 
     def set_current_rate_mode(self, mode: str):
-        """Установка текущего режима лимитов"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             cursor.execute('''
                 INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
             ''', ('rate_limit_mode', mode))
             conn.commit()
-            logger.info(f"🎛️ RATE_MODE: Saved mode '{mode}' to database")
+
+    def get_setting(self, key: str, default: str = None) -> str:
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT value FROM settings WHERE key = ?', (key,))
+            result = cursor.fetchone()
+            return result[0] if result else default
+
+    def set_setting(self, key: str, value: str):
+        safe_key = security.validate_text_input(key, 100)
+        safe_value = security.validate_text_input(value, 1000)
+        
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)
+            ''', (safe_key, safe_value))
+            conn.commit()
 
 # Инициализация базы данных
 db = Database()
+
+# === INLINE КНОПКИ СИСТЕМА v22 ===
+
+class InlineMenus:
+    """Система inline меню для разных ролей пользователей"""
+    
+    @staticmethod
+    def create_user_menu() -> InlineKeyboardMarkup:
+        """Меню для обычных пользователей"""
+        markup = InlineKeyboardMarkup(row_width=2)
+        
+        # Первый ряд - персональная статистика
+        markup.add(
+            InlineKeyboardButton("👤 Моя статистика", callback_data="mystat"),
+            InlineKeyboardButton("🏆 Топ промоутеры", callback_data="topusers")
+        )
+        
+        # Второй ряд - общая статистика
+        markup.add(
+            InlineKeyboardButton("📊 Общий рейтинг", callback_data="linkstats"),
+            InlineKeyboardButton("👥 Стата пользователя", callback_data="userstat_interactive")
+        )
+        
+        # Третий ряд - ссылки
+        markup.add(
+            InlineKeyboardButton("🔗 Все ссылки", callback_data="alllinks"),
+            InlineKeyboardButton("🕐 Последние ссылки", callback_data="recent")
+        )
+        
+        # Четвертый ряд - помощь
+        markup.add(
+            InlineKeyboardButton("❓ Помощь", callback_data="help")
+        )
+        
+        return markup
+    
+    @staticmethod
+    def create_admin_menu() -> InlineKeyboardMarkup:
+        """Расширенное меню для администраторов"""
+        markup = InlineKeyboardMarkup(row_width=2)
+        
+        # Первый ряд - статистика
+        markup.add(
+            InlineKeyboardButton("📊 Статистика", callback_data="stats_menu"),
+            InlineKeyboardButton("🎛️ Управление", callback_data="control_menu")
+        )
+        
+        # Второй ряд - настройки
+        markup.add(
+            InlineKeyboardButton("⚙️ Настройки", callback_data="settings_menu"),
+            InlineKeyboardButton("🔧 Диагностика", callback_data="diagnostic_menu")
+        )
+        
+        # Третий ряд - пользовательское меню
+        markup.add(
+            InlineKeyboardButton("👥 Пользовательское меню", callback_data="user_menu")
+        )
+        
+        return markup
+    
+    @staticmethod
+    def create_stats_menu() -> InlineKeyboardMarkup:
+        """Подменю статистики для админов"""
+        markup = InlineKeyboardMarkup(row_width=2)
+        
+        markup.add(
+            InlineKeyboardButton("📈 Общая статистика", callback_data="stats"),
+            InlineKeyboardButton("🤖 Статистика бота", callback_data="botstat")
+        )
+        
+        markup.add(
+            InlineKeyboardButton("📊 Рейтинг пользователей", callback_data="linkstats"),
+            InlineKeyboardButton("🏆 Топ-5 активных", callback_data="topusers")
+        )
+        
+        markup.add(
+            InlineKeyboardButton("👤 Стата пользователя", callback_data="userstat_interactive"),
+            InlineKeyboardButton("🔗 Последние ссылки", callback_data="recent")
+        )
+        
+        markup.add(
+            InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")
+        )
+        
+        return markup
+    
+    @staticmethod
+    def create_control_menu() -> InlineKeyboardMarkup:
+        """Подменю управления для админов"""
+        markup = InlineKeyboardMarkup(row_width=2)
+        
+        # Управление ботом
+        markup.add(
+            InlineKeyboardButton("✅ Активировать", callback_data="activate"),
+            InlineKeyboardButton("🛑 Деактивировать", callback_data="deactivate")
+        )
+        
+        # Режимы лимитов
+        markup.add(
+            InlineKeyboardButton("🎛️ Режимы лимитов", callback_data="modes_menu"),
+            InlineKeyboardButton("⚡ Текущий режим", callback_data="currentmode")
+        )
+        
+        markup.add(
+            InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")
+        )
+        
+        return markup
+    
+    @staticmethod
+    def create_modes_menu() -> InlineKeyboardMarkup:
+        """Подменю выбора режимов лимитов"""
+        markup = InlineKeyboardMarkup(row_width=1)
+        
+        current_mode = db.get_current_rate_mode()
+        
+        for mode_key, mode_config in RATE_LIMIT_MODES.items():
+            emoji = mode_config['emoji']
+            name = mode_config['name']
+            
+            # Отмечаем текущий режим
+            if mode_key == current_mode:
+                button_text = f"✅ {emoji} {name}"
+            else:
+                button_text = f"{emoji} {name}"
+            
+            markup.add(
+                InlineKeyboardButton(button_text, callback_data=f"setmode_{mode_key}")
+            )
+        
+        markup.add(
+            InlineKeyboardButton("🔄 Перезагрузить режимы", callback_data="reloadmodes")
+        )
+        
+        markup.add(
+            InlineKeyboardButton("🔙 Назад", callback_data="control_menu")
+        )
+        
+        return markup
+    
+    @staticmethod
+    def create_settings_menu() -> InlineKeyboardMarkup:
+        """Подменю настроек для админов"""
+        markup = InlineKeyboardMarkup(row_width=2)
+        
+        markup.add(
+            InlineKeyboardButton("💬 Изменить сообщение", callback_data="setmessage_interactive"),
+            InlineKeyboardButton("🧹 Очистить историю", callback_data="clearhistory")
+        )
+        
+        # Режимы интерфейса
+        current_interface = db.get_setting('inline_mode', 'hybrid')
+        interface_text = f"📱 Интерфейс: {current_interface.upper()}"
+        markup.add(
+            InlineKeyboardButton(interface_text, callback_data="interface_menu")
+        )
+        
+        markup.add(
+            InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")
+        )
+        
+        return markup
+    
+    @staticmethod
+    def create_diagnostic_menu() -> InlineKeyboardMarkup:
+        """Подменю диагностики для админов"""
+        markup = InlineKeyboardMarkup(row_width=2)
+        
+        markup.add(
+            InlineKeyboardButton("🧪 Тест regex", callback_data="test_regex_interactive"),
+            InlineKeyboardButton("📋 Все ссылки", callback_data="alllinks")
+        )
+        
+        markup.add(
+            InlineKeyboardButton("🔙 Назад", callback_data="admin_menu")
+        )
+        
+        return markup
+    
+    @staticmethod
+    def create_back_button(callback_data: str = "main_menu") -> InlineKeyboardMarkup:
+        """Кнопка "Назад" """
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("🔙 Назад", callback_data=callback_data))
+        return markup
+
+# Инициализация меню
+menus = InlineMenus()
+
+# === ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ===
 
 def is_admin(user_id: int) -> bool:
     """Проверка прав администратора"""
@@ -642,25 +874,26 @@ def extract_links(text: str) -> list:
     """Извлечение ссылок из текста"""
     return URL_PATTERN.findall(text)
 
-def safe_send_message(chat_id: int, text: str, message_thread_id: int = None, reply_to_message_id: int = None):
+def safe_send_message(chat_id: int, text: str, message_thread_id: int = None, reply_to_message_id: int = None, reply_markup=None):
     """Безопасная отправка сообщения с обработкой ошибок"""
     try:
         logger.info(f"💬 SEND_MESSAGE: Preparing to send message to chat {chat_id}")
         
-        time.sleep(RESPONSE_DELAY)  # Задержка перед отправкой
+        time.sleep(RESPONSE_DELAY)
         
         if message_thread_id:
             result = bot.send_message(
                 chat_id=chat_id, 
                 text=text, 
                 message_thread_id=message_thread_id,
-                reply_to_message_id=reply_to_message_id
+                reply_to_message_id=reply_to_message_id,
+                reply_markup=reply_markup
             )
         else:
             if reply_to_message_id:
-                result = bot.reply_to(reply_to_message_id, text)
+                result = bot.reply_to(reply_to_message_id, text, reply_markup=reply_markup)
             else:
-                result = bot.send_message(chat_id, text)
+                result = bot.send_message(chat_id, text, reply_markup=reply_markup)
         
         logger.info(f"✅ SENT: Message sent successfully")
         return True
@@ -668,41 +901,55 @@ def safe_send_message(chat_id: int, text: str, message_thread_id: int = None, re
         logger.error(f"❌ SEND_ERROR: Failed to send message: {str(e)}")
         return False
 
-# === УЛУЧШЕННЫЙ WEBHOOK СЕРВЕР v21 ===
+def get_user_rank(total_links: int) -> tuple[str, str]:
+    """Определение звания пользователя"""
+    if total_links >= 31:
+        return "💎", "Амбассадор"
+    elif total_links >= 16:
+        return "🥇", "Промоутер"
+    elif total_links >= 6:
+        return "🥈", "Активный"
+    else:
+        return "🥉", "Начинающий"
+
+def get_progress_to_next_rank(total_links: int) -> tuple[int, str]:
+    """Прогресс до следующего звания"""
+    if total_links >= 31:
+        return 0, "Максимальное звание достигнуто!"
+    elif total_links >= 16:
+        return 31 - total_links, "💎 Амбассадор"
+    elif total_links >= 6:
+        return 16 - total_links, "🥇 Промоутер"
+    else:
+        return 6 - total_links, "🥈 Активный"
+
+# === УЛУЧШЕННЫЙ WEBHOOK СЕРВЕР ===
 
 class WebhookHandler(BaseHTTPRequestHandler):
     def do_POST(self):
-        """Обработка POST запросов с улучшенной безопасностью"""
         client_ip = self.client_address[0]
         logger.info(f"📨 WEBHOOK_POST: Request from {client_ip} to {self.path}")
         
-        # Проверка rate limiting
         if not rate_limiter.is_allowed(client_ip):
             logger.warning(f"🚫 RATE_LIMITED: Blocked {client_ip}")
-            self.send_response(429)  # Too Many Requests
+            self.send_response(429)
             self.end_headers()
             return
         
         if self.path == WEBHOOK_PATH:
             try:
-                # Проверка размера содержимого
                 content_length = int(self.headers.get('Content-Length', 0))
                 
-                # Валидация Telegram запроса
                 if not security.verify_telegram_request(self.headers, content_length):
                     logger.warning(f"🚨 SECURITY: Invalid request from {client_ip}")
                     self.send_response(403)
                     self.end_headers()
                     return
                 
-                # Чтение данных
                 post_data = self.rfile.read(content_length)
                 logger.info(f"📦 WEBHOOK_DATA: Received {content_length} bytes")
                 
-                # Парсинг JSON
                 update_data = json.loads(post_data.decode('utf-8'))
-                
-                # Создание и обработка update
                 update = telebot.types.Update.de_json(update_data)
                 
                 if update:
@@ -728,14 +975,12 @@ class WebhookHandler(BaseHTTPRequestHandler):
             response = json.dumps({
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "version": "v21-fixed",
-                "security": "enhanced",
-                "features": ["webhook_security", "connection_pooling", "keep_alive"]
+                "version": "v22",
+                "features": ["inline_buttons", "user_permissions", "state_management"]
             })
             self.wfile.write(response.encode())
         
         elif self.path == '/keepalive':
-            # Специальный endpoint для внешних пинг-сервисов
             client_ip = self.client_address[0]
             logger.info(f"💓 KEEPALIVE: Keep-alive ping received from {client_ip}")
             
@@ -743,7 +988,6 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
-            # Проверяем статус бота
             try:
                 bot_active = db.is_bot_active()
                 current_limits = get_current_limits()
@@ -751,9 +995,10 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 response = json.dumps({
                     "status": "alive",
                     "timestamp": time.time(),
-                    "version": "v21-fixed",
+                    "version": "v22",
                     "bot_active": bot_active,
                     "current_mode": current_limits['mode_name'],
+                    "features": ["inline_buttons", "user_permissions"],
                     "uptime_check": "✅ OK"
                 })
             except Exception as e:
@@ -770,7 +1015,6 @@ class WebhookHandler(BaseHTTPRequestHandler):
             self.end_headers()
     
     def do_GET(self):
-        """Обработка GET запросов"""
         if self.path == '/' or self.path == '/health':
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
@@ -778,12 +1022,11 @@ class WebhookHandler(BaseHTTPRequestHandler):
             response = json.dumps({
                 "status": "healthy", 
                 "service": "telegram-bot",
-                "version": "v21-fixed"
+                "version": "v22"
             })
             self.wfile.write(response.encode())
         
         elif self.path == '/keepalive':
-            # Keep-alive endpoint для GET запросов (UptimeRobot использует GET)
             client_ip = self.client_address[0]
             logger.info(f"💓 KEEPALIVE_GET: Keep-alive ping (GET) from {client_ip}")
             
@@ -799,9 +1042,10 @@ class WebhookHandler(BaseHTTPRequestHandler):
                     "status": "alive",
                     "method": "GET",
                     "timestamp": time.time(),
-                    "version": "v21-fixed",
+                    "version": "v22",
                     "bot_active": bot_active,
                     "current_mode": current_limits['mode_name'],
+                    "features": ["inline_buttons", "user_permissions"],
                     "uptime_check": "✅ OK"
                 })
             except Exception as e:
@@ -823,7 +1067,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Presave Reminder Bot v21-fixed - Webhook</title>
+                <title>Presave Reminder Bot v22 - Webhook</title>
                 <meta charset="utf-8">
                 <style>
                     body {{ font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; }}
@@ -834,31 +1078,31 @@ class WebhookHandler(BaseHTTPRequestHandler):
             </head>
             <body>
                 <div class="header">
-                    <h1>🤖 Presave Reminder Bot v21-fixed</h1>
-                    <h2>Enhanced Security Webhook</h2>
+                    <h1>🤖 Presave Reminder Bot v22</h1>
+                    <h2>Inline Buttons & User Permissions</h2>
                 </div>
                 
                 <div class="status">
-                    <h3>✅ Status: Active & Secured</h3>
-                    <p>Production-ready version with fixed webhook security</p>
+                    <h3>✅ Status: Active & Modern</h3>
+                    <p>Version with inline buttons and extended user permissions</p>
                 </div>
                 
                 <div class="feature">
-                    <h4>🔐 Security Features</h4>
+                    <h4>🆕 New Features v22</h4>
                     <ul>
-                        <li>Flexible webhook validation for production</li>
-                        <li>Rate limiting protection</li>
-                        <li>SQL injection prevention</li>
-                        <li>Connection pooling</li>
+                        <li>Inline keyboard buttons interface</li>
+                        <li>User permissions system</li>
+                        <li>Interactive commands</li>
+                        <li>Personal statistics (/mystat)</li>
                     </ul>
                 </div>
                 
                 <div class="feature">
-                    <h4>🐛 Bug Fixes</h4>
+                    <h4>🔐 Security & Performance</h4>
                     <ul>
-                        <li>Fixed division by zero in currentmode</li>
-                        <li>Enhanced error handling</li>
-                        <li>Database connection stability</li>
+                        <li>Role-based access control</li>
+                        <li>State management system</li>
+                        <li>Enhanced database optimization</li>
                         <li>Production webhook compatibility</li>
                     </ul>
                 </div>
@@ -873,82 +1117,1163 @@ class WebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass
 
-# === ОБРАБОТЧИКИ КОМАНД v21 ===
+# === КОМАНДЫ v22 ===
 
 @bot.message_handler(commands=['start'])
 def cmd_start(message):
-    if not is_admin(message.from_user.id):
-        return
+    user_role = get_user_role(message.from_user.id)
     
-    bot.reply_to(message, """
-🤖 Presave Reminder Bot v21-fixed запущен!
+    if user_role == 'admin':
+        bot.reply_to(message, """
+🤖 Presave Reminder Bot v22 запущен!
 
-🔧 Исправления v21-fixed:
-✅ Фикс деления на ноль в /currentmode
-✅ Улучшенная безопасность webhook для production
-✅ Connection pooling для БД
-✅ Защита от SQL injection
+🆕 Новые возможности v22:
+📱 Inline кнопки интерфейс
+👥 Права доступа для пользователей  
+🎯 Интерактивные команды
+👤 Персональная статистика /mystat
 
+👑 Вы вошли как администратор
 Для управления используйте /help
-    """)
+        """)
+    else:
+        bot.reply_to(message, """
+🤖 Добро пожаловать в Presave Reminder Bot v22!
+
+🎵 Этот бот поможет вам:
+• Отслеживать пресейвы музыки
+• Просматривать статистику активности
+• Соревноваться с другими промоутерами
+
+📊 Доступные команды: /help
+👤 Ваша статистика: /mystat
+        """)
 
 @bot.message_handler(commands=['help'])
 def cmd_help(message):
-    """ИСПРАВЛЕННАЯ команда help с примерами режимов"""
-    if not is_admin(message.from_user.id):
-        return
+    user_role = get_user_role(message.from_user.id)
     
-    help_text = """
-🤖 Команды бота v21:
+    if user_role == 'admin':
+        help_text = """
+🤖 Команды бота v22 (Администратор):
 
-👑 Основные команды:
+👑 Административные команды:
 /help — этот список команд
 /activate — включить бота в топике
 /deactivate — отключить бота в топике  
 /stats — общая статистика работы
 /botstat — мониторинг лимитов
 
-📊 Статистика:
-/linkstats — рейтинг пользователей
-/topusers — топ-5 активных
-/userstat @username — статистика пользователя
-
-🎛️ Лимиты (ИСПРАВЛЕНО):
+🎛️ Управление лимитами:
 /modes — показать режимы лимитов
 /setmode <режим> — сменить режим
-  └ conservative — безопасный (60/час)
-  └ normal — рабочий (180/час) 
-  └ burst — быстрый (600/час)
-  └ admin_burst — максимум (1200/час) 👑
-  └ Пример: /setmode normal
 /currentmode — текущий режим
-/reloadmodes — обновить из Environment Variables
+/reloadmodes — обновить режимы
 
-🔧 Настройки:
+⚙️ Настройки:
 /setmessage текст — изменить напоминание
 /clearhistory — очистить историю
 /test_regex — тест ссылок
+
+📊 Статистика (доступна всем):
+/linkstats — рейтинг пользователей
+/topusers — топ-5 активных
+/userstat @username — статистика пользователя
+/mystat — моя подробная статистика
 /alllinks — все ссылки
 /recent — последние ссылки
 
-🆕 v21-fixed исправления:
-✅ Исправлены краши команд
-✅ Безопасность webhook для production
-✅ Connection pooling
-✅ Защита от SQL injection
-    """
+📱 Inline режимы:
+/inlinemode_on — включить кнопки
+/inlinemode_off — отключить кнопки
+/menu — показать главное меню кнопок
+
+🆕 v22: Inline кнопки + права пользователей!
+        """
+    else:
+        help_text = """
+🤖 Команды бота v22 (Пользователь):
+
+📊 Статистика:
+/help — этот список команд
+/linkstats — рейтинг пользователей
+/topusers — топ-5 активных
+/userstat @username — статистика пользователя
+/mystat — моя подробная статистика
+/alllinks — все ссылки
+/recent — последние ссылки
+
+📱 Удобное управление:
+/menu — показать меню с кнопками
+
+🏆 Система званий:
+🥉 Начинающий (1-5 ссылок)
+🥈 Активный (6-15 ссылок)  
+🥇 Промоутер (16-30 ссылок)
+💎 Амбассадор (31+ ссылок)
+
+🎵 Делитесь ссылками на музыку и растите в рейтинге!
+        """
     
     bot.reply_to(message, help_text)
 
-@bot.message_handler(commands=['modes'])
-def cmd_modes(message):
-    """Показать все доступные режимы с актуальными значениями"""
-    if not is_admin(message.from_user.id):
-        return
+# === КОМАНДА /mystat ===
+
+@bot.message_handler(commands=['mystat'])
+@check_permissions(['admin', 'user'])
+def cmd_my_stat(message):
+    """Подробная статистика текущего пользователя"""
+    user_id = message.from_user.id
+    username = message.from_user.username or f"user_{user_id}"
     
+    try:
+        # Получаем статистику пользователя
+        user_data = db.get_user_stats(username)
+        
+        if not user_data:
+            bot.reply_to(message, """
+👤 Ваша статистика:
+
+🔗 Всего ссылок: 0
+🏆 Звание: 🥉 Начинающий
+📈 До первой ссылки: Поделитесь музыкой!
+
+💡 Начните делиться ссылками на музыку для роста в рейтинге!
+            """)
+            return
+        
+        username_db, total_links, last_updated = user_data
+        
+        # Определяем звание и прогресс
+        rank_emoji, rank_name = get_user_rank(total_links)
+        progress_needed, next_rank = get_progress_to_next_rank(total_links)
+        
+        # Получаем место в рейтинге
+        all_users = db.get_user_stats()
+        user_position = None
+        total_users = len(all_users)
+        
+        for i, (db_username, db_links, _) in enumerate(all_users, 1):
+            if db_username == username_db:
+                user_position = i
+                break
+        
+        # Активность за неделю
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT COUNT(*) FROM link_history 
+                WHERE user_id = ? AND timestamp >= datetime('now', '-7 days')
+            ''', (user_id,))
+            week_activity = cursor.fetchone()[0] if cursor.fetchone() else 0
+        
+        # Формируем статистику
+        stat_text = f"""
+👤 Моя статистика:
+
+🔗 Всего ссылок: {total_links}
+🏆 Звание: {rank_emoji} {rank_name}
+📅 Последняя активность: {last_updated[:16] if last_updated else 'Никогда'}
+📈 Место в рейтинге: {user_position if user_position else 'Не определено'} из {total_users}
+📊 Активность за неделю: {week_activity} ссылок
+
+🎯 Прогресс:
+{f"До {next_rank}: {progress_needed} ссылок" if progress_needed > 0 else "Максимальное звание достигнуто! 🎉"}
+
+💪 {'Продолжайте в том же духе!' if total_links > 0 else 'Начните делиться музыкой!'}
+        """
+        
+        bot.reply_to(message, stat_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in MYSTAT command: {str(e)}")
+        bot.reply_to(message, "❌ Ошибка получения вашей статистики")
+
+# === INLINE РЕЖИМЫ ===
+
+@bot.message_handler(commands=['inlinemode_on'])
+@check_permissions(['admin'])
+def cmd_inline_on(message):
+    db.set_setting('inline_mode', 'buttons')
+    
+    user_role = get_user_role(message.from_user.id)
+    markup = menus.create_admin_menu() if user_role == 'admin' else menus.create_user_menu()
+    
+    bot.reply_to(message, 
+        "✅ Режим inline кнопок активирован!\n\n🎛️ Используйте кнопки ниже для управления:",
+        reply_markup=markup
+    )
+    logger.info(f"🎛️ INLINE: Activated by user {message.from_user.id}")
+
+@bot.message_handler(commands=['inlinemode_off'])  
+@check_permissions(['admin'])
+def cmd_inline_off(message):
+    db.set_setting('inline_mode', 'commands')
+    bot.reply_to(message, "❌ Режим inline кнопок деактивирован. Используйте обычные команды.")
+    logger.info(f"🎛️ INLINE: Deactivated by user {message.from_user.id}")
+
+@bot.message_handler(commands=['menu'])
+@check_permissions(['admin', 'user'])
+def cmd_menu(message):
+    """Показать главное меню с кнопками"""
+    user_role = get_user_role(message.from_user.id)
+    
+    if user_role == 'admin':
+        markup = menus.create_admin_menu()
+        text = "👑 Админское меню:"
+    else:
+        markup = menus.create_user_menu()
+        text = "👥 Пользовательское меню:"
+    
+    bot.reply_to(message, text, reply_markup=markup)
+
+# === CALLBACK HANDLERS ===
+
+@bot.callback_query_handler(func=lambda call: True)
+def handle_callbacks(call):
+    """Обработка нажатий на inline кнопки"""
+    user_role = get_user_role(call.from_user.id)
+    
+    try:
+        # Основные меню
+        if call.data == "admin_menu":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            markup = menus.create_admin_menu()
+            bot.edit_message_text(
+                "👑 Админское меню:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        elif call.data == "user_menu":
+            markup = menus.create_user_menu()
+            bot.edit_message_text(
+                "👥 Пользовательское меню:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        # Подменю админов
+        elif call.data == "stats_menu":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            markup = menus.create_stats_menu()
+            bot.edit_message_text(
+                "📊 Статистика:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        elif call.data == "control_menu":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            markup = menus.create_control_menu()
+            bot.edit_message_text(
+                "🎛️ Управление ботом:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        elif call.data == "settings_menu":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            markup = menus.create_settings_menu()
+            bot.edit_message_text(
+                "⚙️ Настройки:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        elif call.data == "diagnostic_menu":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            markup = menus.create_diagnostic_menu()
+            bot.edit_message_text(
+                "🔧 Диагностика:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        elif call.data == "modes_menu":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            markup = menus.create_modes_menu()
+            bot.edit_message_text(
+                "🎛️ Выберите режим лимитов:",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        # Команды статистики (доступны всем)
+        elif call.data == "mystat":
+            if not can_execute_command(call.from_user.id, 'mystat'):
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            # Выполняем команду mystat через callback
+            execute_mystat_callback(call)
+        
+        elif call.data == "userstat_interactive":
+            if not can_execute_command(call.from_user.id, 'userstat'):
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            # Устанавливаем состояние ожидания username
+            db.set_user_state(call.from_user.id, 'waiting_username')
+            
+            user_role = get_user_role(call.from_user.id)
+            back_menu = "user_menu" if user_role == 'user' else "stats_menu"
+            markup = menus.create_back_button(back_menu)
+            
+            bot.edit_message_text(
+                "👤 Введите username пользователя:\n(с @ или без, например: @musiclover или musiclover)",
+                call.message.chat.id,
+                call.message.message_id,
+                reply_markup=markup
+            )
+        
+        # Установка режимов (только админы)
+        elif call.data.startswith("setmode_"):
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            mode = call.data.replace("setmode_", "")
+            success, result_text = set_rate_limit_mode(mode, call.from_user.id)
+            
+            if success:
+                bot.answer_callback_query(call.id, f"✅ Режим изменен на {mode}")
+                # Обновляем меню с новым выбранным режимом
+                markup = menus.create_modes_menu()
+                bot.edit_message_reply_markup(
+                    call.message.chat.id,
+                    call.message.message_id,
+                    reply_markup=markup
+                )
+            else:
+                bot.answer_callback_query(call.id, f"❌ {result_text}")
+        
+        # Команды через унифицированные функции
+        elif call.data == "stats":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            def callback_response(text, markup):
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            
+            execute_stats_command(call.from_user.id, callback_response, is_callback=True)
+        
+        elif call.data == "botstat":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            def callback_response(text, markup):
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            
+            execute_botstat_callback(call)
+        
+        elif call.data == "linkstats":
+            if not can_execute_command(call.from_user.id, 'linkstats'):
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            def callback_response(text, markup):
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            
+            execute_linkstats_command(call.from_user.id, callback_response, is_callback=True)
+        
+        elif call.data == "topusers":
+            if not can_execute_command(call.from_user.id, 'topusers'):
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            def callback_response(text, markup):
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            
+            execute_topusers_command(call.from_user.id, callback_response, is_callback=True)
+        
+        elif call.data == "recent":
+            if not can_execute_command(call.from_user.id, 'recent'):
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            def callback_response(text, markup):
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            
+            execute_recent_command(call.from_user.id, callback_response, is_callback=True)
+        
+        elif call.data == "alllinks":
+            if not can_execute_command(call.from_user.id, 'alllinks'):
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            
+            def callback_response(text, markup):
+                bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            
+            execute_alllinks_command(call.from_user.id, callback_response, is_callback=True)
+        
+        elif call.data == "help":
+            execute_help_callback(call)
+        
+        elif call.data == "activate":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            execute_activate_callback(call)
+        
+        elif call.data == "deactivate":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            execute_deactivate_callback(call)
+        
+        elif call.data == "currentmode":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            execute_currentmode_callback(call)
+        
+        elif call.data == "reloadmodes":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            execute_reloadmodes_callback(call)
+        
+        elif call.data == "clearhistory":
+            if user_role != 'admin':
+                bot.answer_callback_query(call.id, "❌ Доступ запрещен")
+                return
+            execute_clearhistory_callback(call)
+        
+        bot.answer_callback_query(call.id)
+        
+    except Exception as e:
+        logger.error(f"Callback error: {e}")
+        bot.answer_callback_query(call.id, "❌ Ошибка обработки")
+
+# === УНИФИЦИРОВАННЫЕ ФУНКЦИИ ДЛЯ КОМАНД И CALLBACKS ===
+
+def execute_stats_command(user_id: int, response_func, is_callback: bool = False):
+    """Унифицированная функция статистики"""
+    try:
+        bot_stats = db.get_bot_stats()
+        user_stats = db.get_user_stats()
+        
+        total_users = len(user_stats) if user_stats else 0
+        total_links = sum(user[1] for user in user_stats) if user_stats else 0
+        
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('SELECT COUNT(*) FROM link_history WHERE DATE(timestamp) = DATE("now")')
+            today_links_result = cursor.fetchone()
+            today_links = today_links_result[0] if today_links_result else 0
+            
+            cursor.execute('SELECT COUNT(*) FROM link_history WHERE timestamp >= datetime("now", "-7 days")')
+            week_links_result = cursor.fetchone()
+            week_links = week_links_result[0] if week_links_result else 0
+            
+            cursor.execute('SELECT username, total_links FROM user_links WHERE total_links > 0 ORDER BY total_links DESC LIMIT 1')
+            top_user = cursor.fetchone()
+        
+        status_emoji = "🟢" if bot_stats['is_active'] else "🔴"
+        status_text = "Активен" if bot_stats['is_active'] else "Отключен"
+        
+        current_limits = get_current_limits()
+        current_mode = db.get_current_rate_mode()
+        
+        stats_text = f"""
+📊 Статистика бота v22:
+
+🤖 Статус: {status_emoji} {status_text}
+👥 Активных пользователей: {total_users}
+🔗 Всего ссылок: {total_links}
+
+📅 За сегодня:
+• Ссылок: {today_links}
+• Ответов: {bot_stats['today_responses']}
+
+📈 За неделю:
+• Ссылок: {week_links}
+
+⚡ Лимиты ({current_limits['mode_emoji']} {current_mode.upper()}):
+• Ответов в час: {bot_stats['hourly_responses']}/{bot_stats['hourly_limit']}
+
+🏆 Лидер: {f"@{top_user[0]} ({top_user[1]} ссылок)" if top_user else "пока нет"}
+
+🔗 Webhook: активен | Версия: v22 (с кнопками)
+        """
+        
+        if is_callback:
+            user_role = get_user_role(user_id)
+            back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+            markup = menus.create_back_button(back_menu)
+            response_func(stats_text, markup)
+        else:
+            response_func(stats_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in STATS command: {str(e)}")
+        if is_callback:
+            response_func("❌ Ошибка получения статистики", None)
+        else:
+            response_func("❌ Ошибка получения статистики")
+
+def execute_linkstats_command(user_id: int, response_func, is_callback: bool = False):
+    """Унифицированная функция linkstats"""
+    try:
+        users = db.get_user_stats()
+        
+        if not users:
+            text = "📊 Пока нет пользователей с ссылками"
+            if is_callback:
+                user_role = get_user_role(user_id)
+                back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+                markup = menus.create_back_button(back_menu)
+                response_func(text, markup)
+            else:
+                response_func(text)
+            return
+        
+        stats_text = "📊 Статистика по ссылкам v22:\n\n"
+        
+        for i, (username, total_links, last_updated) in enumerate(users[:10], 1):
+            rank_emoji, rank_name = get_user_rank(total_links)
+            stats_text += f"{rank_emoji} {i}. @{username} — {total_links} ссылок\n"
+        
+        if is_callback:
+            user_role = get_user_role(user_id)
+            back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+            markup = menus.create_back_button(back_menu)
+            response_func(stats_text, markup)
+        else:
+            response_func(stats_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in LINKSTATS command: {str(e)}")
+        error_text = "❌ Ошибка получения статистики"
+# === СПЕЦИАЛЬНЫЕ CALLBACK ФУНКЦИИ ===
+
+def execute_mystat_callback(call):
+    """Выполнение mystat через callback"""
+    try:
+        user_id = call.from_user.id
+        username = call.from_user.username or f"user_{user_id}"
+        
+        # Получаем статистику пользователя
+        user_data = db.get_user_stats(username)
+        
+        if not user_data:
+            stat_text = """
+👤 Ваша статистика:
+
+🔗 Всего ссылок: 0
+🏆 Звание: 🥉 Начинающий
+📈 До первой ссылки: Поделитесь музыкой!
+
+💡 Начните делиться ссылками на музыку для роста в рейтинге!
+            """
+        else:
+            username_db, total_links, last_updated = user_data
+            
+            # Определяем звание и прогресс
+            rank_emoji, rank_name = get_user_rank(total_links)
+            progress_needed, next_rank = get_progress_to_next_rank(total_links)
+            
+            # Получаем место в рейтинге
+            all_users = db.get_user_stats()
+            user_position = None
+            total_users = len(all_users)
+            
+            for i, (db_username, db_links, _) in enumerate(all_users, 1):
+                if db_username == username_db:
+                    user_position = i
+                    break
+            
+            # Активность за неделю
+            with db.get_connection() as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT COUNT(*) FROM link_history 
+                    WHERE user_id = ? AND timestamp >= datetime('now', '-7 days')
+                ''', (user_id,))
+                week_result = cursor.fetchone()
+                week_activity = week_result[0] if week_result else 0
+            
+            stat_text = f"""
+👤 Моя статистика:
+
+🔗 Всего ссылок: {total_links}
+🏆 Звание: {rank_emoji} {rank_name}
+📅 Последняя активность: {last_updated[:16] if last_updated else 'Никогда'}
+📈 Место в рейтинге: {user_position if user_position else 'Не определено'} из {total_users}
+📊 Активность за неделю: {week_activity} ссылок
+
+🎯 Прогресс:
+{f"До {next_rank}: {progress_needed} ссылок" if progress_needed > 0 else "Максимальное звание достигнуто! 🎉"}
+
+💪 {'Продолжайте в том же духе!' if total_links > 0 else 'Начните делиться музыкой!'}
+            """
+        
+        user_role = get_user_role(call.from_user.id)
+        back_menu = "user_menu" if user_role == 'user' else "stats_menu"
+        markup = menus.create_back_button(back_menu)
+        
+        bot.edit_message_text(
+            stat_text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=markup
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error in MYSTAT callback: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Ошибка получения статистики")
+
+def execute_botstat_callback(call):
+    """Статистика бота через callback"""
+    try:
+        stats = db.get_bot_stats()
+        current_limits = get_current_limits()
+        current_mode = db.get_current_rate_mode()
+        
+        cooldown_text = "Готов к ответу"
+        if stats['cooldown_until']:
+            try:
+                cooldown_time = datetime.fromisoformat(stats['cooldown_until'])
+                now = datetime.now()
+                if now < cooldown_time:
+                    remaining = int((cooldown_time - now).total_seconds())
+                    cooldown_text = f"Следующий ответ через: {remaining} сек"
+            except Exception as e:
+                logger.error(f"Error parsing cooldown time: {e}")
+                cooldown_text = "Ошибка определения cooldown"
+        
+        status_emoji = "🟢" if stats['is_active'] else "🔴"
+        status_text = "Активен" if stats['is_active'] else "Отключен"
+        
+        hourly_limit = max(stats['hourly_limit'], 1)
+        usage_percent = round((stats['hourly_responses'] / hourly_limit) * 100, 1)
+        
+        stat_text = f"""
+🤖 Статистика бота v22:
+
+{status_emoji} Статус: {status_text}
+{current_limits['mode_emoji']} Режим: {current_mode.upper()}
+⚡ Ответов в час: {stats['hourly_responses']}/{hourly_limit} ({usage_percent}%)
+📊 Ответов за сегодня: {stats['today_responses']}
+⏱️ {cooldown_text}
+🔗 Webhook: активен
+
+⚠️ Статус: {'🟡 Приближение к лимиту' if usage_percent >= 80 else '✅ Всё в порядке'}
+
+🆕 v22: Inline кнопки + права пользователей
+        """
+        
+        markup = menus.create_back_button("stats_menu")
+        bot.edit_message_text(
+            stat_text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=markup
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error in BOTSTAT callback: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Ошибка получения статистики")
+
+def execute_help_callback(call):
+    """Help через callback"""
+    user_role = get_user_role(call.from_user.id)
+    
+    if user_role == 'admin':
+        help_text = """
+🤖 Команды бота v22 (Администратор):
+
+👑 Административные команды:
+• Активация/деактивация бота
+• Управление режимами лимитов
+• Настройки и диагностика
+
+📊 Статистика (доступна всем):
+• Рейтинги пользователей
+• Персональная статистика
+• Список ссылок
+
+📱 Используйте кнопки для удобной навигации
+или команды для быстрого доступа.
+
+🆕 v22: Inline кнопки + права пользователей!
+        """
+        back_menu = "admin_menu"
+    else:
+        help_text = """
+🤖 Команды бота v22 (Пользователь):
+
+📊 Доступная статистика:
+• Рейтинг пользователей
+• Ваша подробная статистика  
+• Топ самых активных
+• Список последних ссылок
+
+🏆 Система званий:
+🥉 Начинающий (1-5 ссылок)
+🥈 Активный (6-15 ссылок)  
+🥇 Промоутер (16-30 ссылок)
+💎 Амбассадор (31+ ссылок)
+
+📱 Используйте кнопки для навигации!
+🎵 Делитесь ссылками на музыку и растите в рейтинге!
+        """
+        back_menu = "user_menu"
+    
+    markup = menus.create_back_button(back_menu)
+    bot.edit_message_text(
+        help_text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=markup
+    )
+
+def execute_activate_callback(call):
+    """Активация бота через callback"""
+    db.set_bot_active(True)
+    
+    current_limits = get_current_limits()
+    current_mode = db.get_current_rate_mode()
+    
+    welcome_text = f"""
+✅ Бот активирован!
+
+🤖 Presave Reminder Bot v22 готов к работе
+🎯 Буду отвечать на сообщения со ссылками
+{current_limits['mode_emoji']} Режим: {current_mode.upper()}
+
+🆕 v22: Inline кнопки + права пользователей! 🎵
+    """
+    
+    markup = menus.create_back_button("control_menu")
+    bot.edit_message_text(
+        welcome_text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=markup
+    )
+
+def execute_deactivate_callback(call):
+    """Деактивация бота через callback"""
+    db.set_bot_active(False)
+    
+    text = "🛑 Бот деактивирован. Не буду отвечать на ссылки до повторной активации."
+    
+    markup = menus.create_back_button("control_menu")
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=markup
+    )
+
+def execute_currentmode_callback(call):
+    """Текущий режим через callback"""
+    try:
+        current_limits = get_current_limits()
+        current_mode_key = db.get_current_rate_mode()
+        
+        if current_mode_key not in RATE_LIMIT_MODES:
+            text = "❌ Ошибка: неизвестный текущий режим. Используйте настройки для сброса."
+            markup = menus.create_back_button("control_menu")
+            bot.edit_message_text(text, call.message.chat.id, call.message.message_id, reply_markup=markup)
+            return
+            
+        mode_config = RATE_LIMIT_MODES[current_mode_key]
+        bot_stats = db.get_bot_stats()
+        
+        max_responses = mode_config.get('max_responses_per_hour', 1)
+        if max_responses <= 0:
+            max_responses = 1
+            
+        usage_percent = round((bot_stats['hourly_responses'] / max_responses) * 100, 1)
+        msgs_per_min = round(max_responses / 60, 2)
+        
+        current_text = f"""
+🎛️ Текущий режим лимитов v22:
+
+{mode_config['emoji']} **{mode_config['name']}**
+📝 {mode_config['description']}
+
+📊 Конфигурация режима:
+• Максимум: {max_responses} ответов/час ({msgs_per_min}/мин)
+• Cooldown: {mode_config['min_cooldown_seconds']} секунд
+• Уровень риска: {mode_config['risk']}
+
+📈 Использование:
+• Отправлено в час: {bot_stats['hourly_responses']}/{max_responses} ({usage_percent}%)
+• Ответов сегодня: {bot_stats['today_responses']}
+
+🔧 Источник: Environment Variables
+        """
+        
+        markup = menus.create_back_button("control_menu")
+        bot.edit_message_text(
+            current_text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=markup
+        )
+        
+    except Exception as e:
+        logger.error(f"❌ Error in CURRENTMODE callback: {str(e)}")
+        bot.answer_callback_query(call.id, "❌ Ошибка получения режима")
+
+def execute_reloadmodes_callback(call):
+    """Перезагрузка режимов через callback"""
+    old_modes = dict(RATE_LIMIT_MODES)
     reload_rate_limit_modes()
     
-    modes_text = "🎛️ Доступные режимы лимитов (v21-fixed):\n\n"
+    reload_text = """
+🔄 Режимы лимитов перезагружены из Environment Variables!
+
+✅ Готово к работе с обновленными настройками
+    """
+    
+    markup = menus.create_back_button("control_menu")
+    bot.edit_message_text(
+        reload_text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=markup
+    )
+    
+    logger.info(f"🔄 RELOAD: Modes reloaded by admin {call.from_user.id} via callback")
+
+def execute_clearhistory_callback(call):
+    """Очистка истории через callback"""
+    try:
+        db.clear_link_history()
+        text = "🧹 История ссылок очищена (общие счётчики сохранены)"
+    except Exception as e:
+        logger.error(f"❌ Error in CLEARHISTORY callback: {str(e)}")
+        text = "❌ Ошибка очистки истории"
+    
+    markup = menus.create_back_button("settings_menu")
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=markup
+    )
+
+def execute_topusers_command(user_id: int, response_func, is_callback: bool = False):
+    """Унифицированная функция topusers"""
+    try:
+        users = db.get_user_stats()
+        
+        if not users:
+            text = "🏆 Пока нет активных пользователей"
+            if is_callback:
+                user_role = get_user_role(user_id)
+                back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+                markup = menus.create_back_button(back_menu)
+                response_func(text, markup)
+            else:
+                response_func(text)
+            return
+        
+        top_text = "🏆 Топ-5 самых активных:\n\n"
+        
+        for i, (username, total_links, last_updated) in enumerate(users[:5], 1):
+            medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
+            medal = medals[i-1] if i <= 5 else "▫️"
+            
+            top_text += f"{medal} @{username} — {total_links} ссылок\n"
+        
+        if is_callback:
+            user_role = get_user_role(user_id)
+            back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+            markup = menus.create_back_button(back_menu)
+            response_func(top_text, markup)
+        else:
+            response_func(top_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in TOPUSERS command: {str(e)}")
+        error_text = "❌ Ошибка получения топа"
+        if is_callback:
+            response_func(error_text, None)
+        else:
+            response_func(error_text)
+
+def execute_recent_command(user_id: int, response_func, is_callback: bool = False):
+    """Унифицированная функция recent"""
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT link_url, username, timestamp 
+                FROM link_history 
+                LEFT JOIN user_links ON link_history.user_id = user_links.user_id
+                ORDER BY timestamp DESC
+                LIMIT 10
+            ''')
+            
+            recent_links = cursor.fetchall()
+        
+        if not recent_links:
+            text = "📋 В базе данных пока нет ссылок"
+            if is_callback:
+                user_role = get_user_role(user_id)
+                back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+                markup = menus.create_back_button(back_menu)
+                response_func(text, markup)
+            else:
+                response_func(text)
+            return
+        
+        recent_text = f"🕐 Последние {len(recent_links)} ссылок v22:\n\n"
+        
+        for i, (link_url, username, timestamp) in enumerate(recent_links, 1):
+            username_display = f"@{username}" if username else "Неизвестный"
+            date_display = timestamp[:16] if timestamp else "Неизвестно"
+            
+            display_url = link_url[:60] + "..." if len(link_url) > 60 else link_url
+            
+            recent_text += f"{i}. {display_url}\n   👤 {username_display} | 📅 {date_display}\n\n"
+        
+        if is_callback:
+            user_role = get_user_role(user_id)
+            back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+            markup = menus.create_back_button(back_menu)
+            response_func(recent_text, markup)
+        else:
+            response_func(recent_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in RECENT command: {str(e)}")
+        error_text = "❌ Ошибка получения последних ссылок"
+        if is_callback:
+            response_func(error_text, None)
+        else:
+            response_func(error_text)
+
+def execute_alllinks_command(user_id: int, response_func, is_callback: bool = False):
+    """Унифицированная функция alllinks"""
+    try:
+        with db.get_connection() as conn:
+            cursor = conn.cursor()
+            
+            cursor.execute('''
+                SELECT link_url, username, timestamp 
+                FROM link_history 
+                LEFT JOIN user_links ON link_history.user_id = user_links.user_id
+                ORDER BY timestamp DESC
+                LIMIT 50
+            ''')
+            
+            links = cursor.fetchall()
+        
+        if not links:
+            text = "📋 В базе данных пока нет ссылок"
+            if is_callback:
+                user_role = get_user_role(user_id)
+                back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+                markup = menus.create_back_button(back_menu)
+                response_func(text, markup)
+            else:
+                response_func(text)
+            return
+        
+        links_text = f"📋 Все ссылки в базе v22 (последние 50):\n\n"
+        
+        for i, (link_url, username, timestamp) in enumerate(links[:20], 1):
+            username_display = f"@{username}" if username else "Неизвестный"
+            date_display = timestamp[:16] if timestamp else "Неизвестно"
+            
+            display_url = link_url[:50] + "..." if len(link_url) > 50 else link_url
+            
+            links_text += f"{i}. {display_url}\n   👤 {username_display} | 📅 {date_display}\n\n"
+        
+        if len(links) > 20:
+            links_text += f"... и ещё {len(links) - 20} ссылок\n"
+        
+        links_text += f"\n📊 Всего ссылок в базе: {len(links)}"
+        
+        if is_callback:
+            user_role = get_user_role(user_id)
+            back_menu = "stats_menu" if user_role == 'admin' else "user_menu"
+            markup = menus.create_back_button(back_menu)
+            response_func(links_text, markup)
+        else:
+            response_func(links_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in ALLLINKS command: {str(e)}")
+        error_text = "❌ Ошибка получения списка ссылок"
+        if is_callback:
+            response_func(error_text, None)
+        else:
+            response_func(error_text)
+
+# === ОБРАБОТКА СОСТОЯНИЙ ===
+
+@bot.message_handler(func=lambda message: db.get_user_state(message.from_user.id)[0] == 'waiting_username')
+def handle_username_input(message):
+    """Обработка ввода username для интерактивной команды userstat"""
+    try:
+        user_id = message.from_user.id
+        username_input = message.text.strip()
+        
+        # Очищаем состояние
+        db.clear_user_state(user_id)
+        
+        # Обрабатываем username (убираем @ если есть)
+        username = username_input.replace('@', '')
+        
+        # Получаем статистику
+        user_data = db.get_user_stats(username)
+        
+        if not user_data:
+            bot.reply_to(message, f"❌ Пользователь @{username} не найден или не имеет ссылок")
+            return
+        
+        username_db, total_links, last_updated = user_data
+        
+        rank_emoji, rank_name = get_user_rank(total_links)
+        
+        stat_text = f"""
+👤 Статистика пользователя @{username_db}:
+
+🔗 Всего ссылок: {total_links}
+📅 Последняя активность: {last_updated[:16]}
+🏆 Звание: {rank_emoji} {rank_name}
+        """
+        
+        bot.reply_to(message, stat_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in username input handler: {str(e)}")
+        bot.reply_to(message, "❌ Ошибка обработки username")
+
+# === КОМАНДЫ С ИСПОЛЬЗОВАНИЕМ УНИФИЦИРОВАННЫХ ФУНКЦИЙ ===
+
+@bot.message_handler(commands=['stats'])
+@check_permissions(['admin'])
+def cmd_stats(message):
+    def message_response(text):
+        bot.reply_to(message, text)
+    
+    execute_stats_command(message.from_user.id, message_response, is_callback=False)
+
+@bot.message_handler(commands=['botstat'])
+@check_permissions(['admin'])
+def cmd_bot_stat(message):
+    try:
+        stats = db.get_bot_stats()
+        current_limits = get_current_limits()
+        current_mode = db.get_current_rate_mode()
+        
+        cooldown_text = "Готов к ответу"
+        if stats['cooldown_until']:
+            try:
+                cooldown_time = datetime.fromisoformat(stats['cooldown_until'])
+                now = datetime.now()
+                if now < cooldown_time:
+                    remaining = int((cooldown_time - now).total_seconds())
+                    cooldown_text = f"Следующий ответ через: {remaining} сек"
+            except Exception as e:
+                logger.error(f"Error parsing cooldown time: {e}")
+                cooldown_text = "Ошибка определения cooldown"
+        
+        status_emoji = "🟢" if stats['is_active'] else "🔴"
+        status_text = "Активен" if stats['is_active'] else "Отключен"
+        
+        hourly_limit = max(stats['hourly_limit'], 1)
+        usage_percent = round((stats['hourly_responses'] / hourly_limit) * 100, 1)
+        
+        stat_text = f"""
+🤖 Статистика бота v22:
+
+{status_emoji} Статус: {status_text}
+{current_limits['mode_emoji']} Режим: {current_mode.upper()}
+⚡ Ответов в час: {stats['hourly_responses']}/{hourly_limit} ({usage_percent}%)
+📊 Ответов за сегодня: {stats['today_responses']}
+⏱️ {cooldown_text}
+🔗 Webhook: активен
+
+⚠️ Статус: {'🟡 Приближение к лимиту' if usage_percent >= 80 else '✅ Всё в порядке'}
+
+🆕 v22: Inline кнопки + права пользователей
+        """
+        
+        bot.reply_to(message, stat_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in BOTSTAT command: {str(e)}")
+        bot.reply_to(message, "❌ Ошибка получения статистики")
+
+@bot.message_handler(commands=['linkstats'])
+@check_permissions(['admin', 'user'])
+def cmd_link_stats(message):
+    def message_response(text):
+        bot.reply_to(message, text)
+    
+    execute_linkstats_command(message.from_user.id, message_response, is_callback=False)
+
+@bot.message_handler(commands=['topusers'])
+@check_permissions(['admin', 'user'])
+def cmd_top_users(message):
+    def message_response(text):
+        bot.reply_to(message, text)
+    
+    execute_topusers_command(message.from_user.id, message_response, is_callback=False)
+
+@bot.message_handler(commands=['alllinks'])
+@check_permissions(['admin', 'user'])
+def cmd_all_links(message):
+    def message_response(text):
+        bot.reply_to(message, text)
+    
+    execute_alllinks_command(message.from_user.id, message_response, is_callback=False)
+
+@bot.message_handler(commands=['recent'])
+@check_permissions(['admin', 'user'])
+def cmd_recent_links(message):
+    def message_response(text):
+        bot.reply_to(message, text)
+    
+    execute_recent_command(message.from_user.id, message_response, is_callback=False)
+
+# === ОСТАЛЬНЫЕ АДМИНСКИЕ КОМАНДЫ ===
+
+@bot.message_handler(commands=['modes'])
+@check_permissions(['admin'])
+def cmd_modes(message):
+    reload_rate_limit_modes()
+    
+    modes_text = "🎛️ Доступные режимы лимитов (v22):\n\n"
     
     for mode_key, mode_config in RATE_LIMIT_MODES.items():
         is_current = "✅ " if mode_key == db.get_current_rate_mode() else "   "
@@ -969,11 +2294,8 @@ def cmd_modes(message):
     bot.reply_to(message, modes_text, parse_mode='Markdown')
 
 @bot.message_handler(commands=['setmode'])
+@check_permissions(['admin'])
 def cmd_set_mode(message):
-    """Установка режима лимитов с валидацией"""
-    if not is_admin(message.from_user.id):
-        return
-    
     args = message.text.split()
     if len(args) < 2:
         current_limits = get_current_limits()
@@ -1003,19 +2325,80 @@ def cmd_set_mode(message):
     else:
         logger.warning(f"❌ SETMODE failed: {result_text}")
     
-    bot.reply_to(message, result_text)
-
-@bot.message_handler(commands=['currentmode'])
-def cmd_current_mode(message):
-    """Показать текущий режим и использование - ИСПРАВЛЕНО"""
-    if not is_admin(message.from_user.id):
+@bot.message_handler(commands=['activate'])
+@check_permissions(['admin'])
+def cmd_activate(message):
+    if message.chat.id != GROUP_ID or message.message_thread_id != THREAD_ID:
+        bot.reply_to(message, "❌ Команда должна выполняться в топике пресейвов")
         return
     
+    db.set_bot_active(True)
+    
+    current_limits = get_current_limits()
+    current_mode = db.get_current_rate_mode()
+    
+    welcome_text = f"""
+🤖 Presave Reminder Bot v22 активирован!
+
+✅ Готов к работе в топике "Пресейвы"
+🎯 Буду отвечать на сообщения со ссылками
+{current_limits['mode_emoji']} Режим: {current_mode.upper()}
+⚙️ Управление: /help или /menu
+🛑 Отключить: /deactivate
+
+🆕 v22: Inline кнопки + права пользователей! 🎵
+    """
+    
+    bot.reply_to(message, welcome_text)
+
+@bot.message_handler(commands=['deactivate'])
+@check_permissions(['admin'])
+def cmd_deactivate(message):
+    db.set_bot_active(False)
+    bot.reply_to(message, "🛑 Бот деактивирован. Для включения используйте /activate")
+
+@bot.message_handler(commands=['userstat'])
+@check_permissions(['admin', 'user'])
+def cmd_user_stat(message):
+    args = message.text.split()
+    if len(args) < 2:
+        bot.reply_to(message, "❌ Укажите username: /userstat @username")
+        return
+    
+    username = args[1].replace('@', '')
+    
+    try:
+        user_data = db.get_user_stats(username)
+        
+        if not user_data:
+            bot.reply_to(message, f"❌ Пользователь @{username} не найден или не имеет ссылок")
+            return
+        
+        username_db, total_links, last_updated = user_data
+        
+        rank_emoji, rank_name = get_user_rank(total_links)
+        
+        stat_text = f"""
+👤 Статистика пользователя @{username_db}:
+
+🔗 Всего ссылок: {total_links}
+📅 Последняя активность: {last_updated[:16]}
+🏆 Звание: {rank_emoji} {rank_name}
+        """
+        
+        bot.reply_to(message, stat_text)
+        
+    except Exception as e:
+        logger.error(f"❌ Error in USERSTAT command: {str(e)}")
+        bot.reply_to(message, "❌ Ошибка получения статистики пользователя")
+
+@bot.message_handler(commands=['currentmode'])
+@check_permissions(['admin'])
+def cmd_current_mode(message):
     try:
         current_limits = get_current_limits()
         current_mode_key = db.get_current_rate_mode()
         
-        # Проверяем что режим существует
         if current_mode_key not in RATE_LIMIT_MODES:
             bot.reply_to(message, "❌ Ошибка: неизвестный текущий режим. Используйте /setmode conservative")
             return
@@ -1023,7 +2406,6 @@ def cmd_current_mode(message):
         mode_config = RATE_LIMIT_MODES[current_mode_key]
         bot_stats = db.get_bot_stats()
         
-        # ИСПРАВЛЕНИЕ: защита от деления на ноль
         max_responses = mode_config.get('max_responses_per_hour', 1)
         if max_responses <= 0:
             max_responses = 1
@@ -1032,7 +2414,7 @@ def cmd_current_mode(message):
         msgs_per_min = round(max_responses / 60, 2)
         
         current_text = f"""
-🎛️ Текущий режим лимитов v21-fixed:
+🎛️ Текущий режим лимитов v22:
 
 {mode_config['emoji']} **{mode_config['name']}**
 📝 {mode_config['description']}
@@ -1057,11 +2439,8 @@ def cmd_current_mode(message):
         bot.reply_to(message, f"❌ Ошибка получения режима: {str(e)}")
 
 @bot.message_handler(commands=['reloadmodes'])
+@check_permissions(['admin'])
 def cmd_reload_modes(message):
-    """Перезагрузка режимов из переменных окружения"""
-    if not is_admin(message.from_user.id):
-        return
-    
     old_modes = dict(RATE_LIMIT_MODES)
     reload_rate_limit_modes()
     
@@ -1088,263 +2467,9 @@ def cmd_reload_modes(message):
     bot.reply_to(message, reload_text)
     logger.info(f"🔄 RELOAD: Modes reloaded by admin {message.from_user.id}")
 
-@bot.message_handler(commands=['stats'])
-def cmd_stats(message):
-    """ИСПРАВЛЕННАЯ команда статистики"""
-    if not is_admin(message.from_user.id):
-        return
-    
-    try:
-        bot_stats = db.get_bot_stats()
-        user_stats = db.get_user_stats()
-        
-        total_users = len(user_stats) if user_stats else 0
-        total_links = sum(user[1] for user in user_stats) if user_stats else 0
-        
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute('SELECT COUNT(*) FROM link_history WHERE DATE(timestamp) = DATE("now")')
-            today_links_result = cursor.fetchone()
-            today_links = today_links_result[0] if today_links_result else 0
-            
-            cursor.execute('SELECT COUNT(*) FROM link_history WHERE timestamp >= datetime("now", "-7 days")')
-            week_links_result = cursor.fetchone()
-            week_links = week_links_result[0] if week_links_result else 0
-            
-            cursor.execute('SELECT username, total_links FROM user_links WHERE total_links > 0 ORDER BY total_links DESC LIMIT 1')
-            top_user = cursor.fetchone()
-        
-        status_emoji = "🟢" if bot_stats['is_active'] else "🔴"
-        status_text = "Активен" if bot_stats['is_active'] else "Отключен"
-        
-        current_limits = get_current_limits()
-        current_mode = db.get_current_rate_mode()
-        
-        stats_text = f"""
-📊 Статистика бота v21-fixed:
-
-🤖 Статус: {status_emoji} {status_text}
-👥 Активных пользователей: {total_users}
-🔗 Всего ссылок: {total_links}
-
-📅 За сегодня:
-• Ссылок: {today_links}
-• Ответов: {bot_stats['today_responses']}
-
-📈 За неделю:
-• Ссылок: {week_links}
-
-⚡ Лимиты ({current_limits['mode_emoji']} {current_mode.upper()}):
-• Ответов в час: {bot_stats['hourly_responses']}/{bot_stats['hourly_limit']}
-
-🏆 Лидер: {f"@{top_user[0]} ({top_user[1]} ссылок)" if top_user else "пока нет"}
-
-🔗 Webhook: активен | Версия: v21-fixed (исправленная)
-        """
-        
-        bot.reply_to(message, stats_text)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in STATS command: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка получения статистики")
-
-@bot.message_handler(commands=['activate'])
-def cmd_activate(message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    if message.chat.id != GROUP_ID or message.message_thread_id != THREAD_ID:
-        bot.reply_to(message, "❌ Команда должна выполняться в топике пресейвов")
-        return
-    
-    db.set_bot_active(True)
-    
-    current_limits = get_current_limits()
-    current_mode = db.get_current_rate_mode()
-    
-    welcome_text = f"""
-🤖 Presave Reminder Bot v21 активирован!
-
-✅ Готов к работе в топике "Пресейвы"
-🎯 Буду отвечать на сообщения со ссылками
-{current_limits['mode_emoji']} Режим: {current_mode.upper()} ({current_limits['max_responses_per_hour']}/час, {current_limits['min_cooldown_seconds']}с)
-⚙️ Управление: /help
-🛑 Отключить: /deactivate
-
-🆕 v21-fixed: Исправлены краши команд! 🎵
-    """
-    
-    bot.reply_to(message, welcome_text)
-
-@bot.message_handler(commands=['deactivate'])
-def cmd_deactivate(message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    db.set_bot_active(False)
-    bot.reply_to(message, "🛑 Бот деактивирован. Для включения используйте /activate")
-
-@bot.message_handler(commands=['botstat'])
-def cmd_bot_stat(message):
-    """ИСПРАВЛЕННАЯ команда статистики бота"""
-    if not is_admin(message.from_user.id):
-        return
-    
-    try:
-        stats = db.get_bot_stats()
-        current_limits = get_current_limits()
-        current_mode = db.get_current_rate_mode()
-        
-        cooldown_text = "Готов к ответу"
-        if stats['cooldown_until']:
-            try:
-                cooldown_time = datetime.fromisoformat(stats['cooldown_until'])
-                now = datetime.now()
-                if now < cooldown_time:
-                    remaining = int((cooldown_time - now).total_seconds())
-                    cooldown_text = f"Следующий ответ через: {remaining} сек"
-            except Exception as e:
-                logger.error(f"Error parsing cooldown time: {e}")
-                cooldown_text = "Ошибка определения cooldown"
-        
-        status_emoji = "🟢" if stats['is_active'] else "🔴"
-        status_text = "Активен" if stats['is_active'] else "Отключен"
-        
-        # ИСПРАВЛЕНИЕ: защита от деления на ноль
-        hourly_limit = max(stats['hourly_limit'], 1)
-        usage_percent = round((stats['hourly_responses'] / hourly_limit) * 100, 1)
-        
-        stat_text = f"""
-🤖 Статистика бота v21-fixed:
-
-{status_emoji} Статус: {status_text}
-{current_limits['mode_emoji']} Режим: {current_mode.upper()}
-⚡ Ответов в час: {stats['hourly_responses']}/{hourly_limit} ({usage_percent}%)
-📊 Ответов за сегодня: {stats['today_responses']}
-⏱️ {cooldown_text}
-🔗 Webhook: активен
-
-⚠️ Статус: {'🟡 Приближение к лимиту' if usage_percent >= 80 else '✅ Всё в порядке'}
-
-🆕 v21-fixed: Исправлены краши и улучшена безопасность
-        """
-        
-        bot.reply_to(message, stat_text)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in BOTSTAT command: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка получения статистики")
-
-# [Остальные команды linkstats, topusers, userstat, setmessage, clearhistory, test_regex, alllinks, recent - остаются без изменений, но с улучшенной обработкой ошибок]
-
-@bot.message_handler(commands=['linkstats'])
-def cmd_link_stats(message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    try:
-        users = db.get_user_stats()
-        
-        if not users:
-            bot.reply_to(message, "📊 Пока нет пользователей с ссылками")
-            return
-        
-        stats_text = "📊 Статистика по ссылкам v21-fixed:\n\n"
-        
-        for i, (username, total_links, last_updated) in enumerate(users[:10], 1):
-            if total_links >= 31:
-                rank = "💎"
-            elif total_links >= 16:
-                rank = "🥇"
-            elif total_links >= 6:
-                rank = "🥈"
-            else:
-                rank = "🥉"
-            
-            stats_text += f"{rank} {i}. @{username} — {total_links} ссылок\n"
-        
-        bot.reply_to(message, stats_text)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in LINKSTATS command: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка получения статистики")
-
-@bot.message_handler(commands=['topusers'])
-def cmd_top_users(message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    try:
-        users = db.get_user_stats()
-        
-        if not users:
-            bot.reply_to(message, "🏆 Пока нет активных пользователей")
-            return
-        
-        top_text = "🏆 Топ-5 самых активных:\n\n"
-        
-        for i, (username, total_links, last_updated) in enumerate(users[:5], 1):
-            medals = ["🥇", "🥈", "🥉", "4️⃣", "5️⃣"]
-            medal = medals[i-1] if i <= 5 else "▫️"
-            
-            top_text += f"{medal} @{username} — {total_links} ссылок\n"
-        
-        bot.reply_to(message, top_text)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in TOPUSERS command: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка получения топа")
-
-@bot.message_handler(commands=['userstat'])
-def cmd_user_stat(message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    args = message.text.split()
-    if len(args) < 2:
-        bot.reply_to(message, "❌ Укажите username: /userstat @username")
-        return
-    
-    username = args[1].replace('@', '')
-    
-    try:
-        user_data = db.get_user_stats(username)
-        
-        if not user_data:
-            bot.reply_to(message, f"❌ Пользователь @{username} не найден или не имеет ссылок")
-            return
-        
-        username, total_links, last_updated = user_data
-        
-        if total_links >= 31:
-            rank = "💎 Амбассадор"
-        elif total_links >= 16:
-            rank = "🥇 Промоутер"
-        elif total_links >= 6:
-            rank = "🥈 Активный"
-        else:
-            rank = "🥉 Начинающий"
-        
-        stat_text = f"""
-👤 Статистика пользователя @{username}:
-
-🔗 Всего ссылок: {total_links}
-📅 Последняя активность: {last_updated[:16]}
-🏆 Звание: {rank}
-        """
-        
-        bot.reply_to(message, stat_text)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in USERSTAT command: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка получения статистики пользователя")
-
 @bot.message_handler(commands=['setmessage'])
+@check_permissions(['admin'])
 def cmd_set_message(message):
-    if not is_admin(message.from_user.id):
-        return
-    
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         current_text = db.get_reminder_text()
@@ -1362,10 +2487,8 @@ def cmd_set_message(message):
         bot.reply_to(message, "❌ Ошибка обновления текста")
 
 @bot.message_handler(commands=['clearhistory'])
+@check_permissions(['admin'])
 def cmd_clear_history(message):
-    if not is_admin(message.from_user.id):
-        return
-    
     try:
         db.clear_link_history()
         bot.reply_to(message, "🧹 История ссылок очищена (общие счётчики сохранены)")
@@ -1375,10 +2498,8 @@ def cmd_clear_history(message):
         bot.reply_to(message, "❌ Ошибка очистки истории")
 
 @bot.message_handler(commands=['test_regex'])
+@check_permissions(['admin'])
 def cmd_test_regex(message):
-    if not is_admin(message.from_user.id):
-        return
-    
     args = message.text.split(maxsplit=1)
     if len(args) < 2:
         bot.reply_to(message, "🧪 Отправьте: /test_regex ваш текст со ссылками")
@@ -1387,7 +2508,7 @@ def cmd_test_regex(message):
     test_text = args[1]
     links = extract_links(test_text)
     
-    result_text = f"🧪 Результат тестирования v21-fixed:\n\n📝 Текст: {test_text}\n\n"
+    result_text = f"🧪 Результат тестирования v22:\n\n📝 Текст: {test_text}\n\n"
     
     if links:
         result_text += f"✅ Найдено ссылок: {len(links)}\n"
@@ -1398,152 +2519,6 @@ def cmd_test_regex(message):
         result_text += "❌ Ссылки не найдены\n👎 Бот НЕ ответит на такое сообщение"
     
     bot.reply_to(message, result_text)
-
-@bot.message_handler(commands=['alllinks'])
-def cmd_all_links(message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    try:
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT link_url, username, timestamp 
-                FROM link_history 
-                LEFT JOIN user_links ON link_history.user_id = user_links.user_id
-                ORDER BY timestamp DESC
-                LIMIT 50
-            ''')
-            
-            links = cursor.fetchall()
-        
-        if not links:
-            bot.reply_to(message, "📋 В базе данных пока нет ссылок")
-            return
-        
-        links_text = f"📋 Все ссылки в базе v21-fixed (последние 50):\n\n"
-        
-        for i, (link_url, username, timestamp) in enumerate(links[:20], 1):
-            username_display = f"@{username}" if username else "Неизвестный"
-            date_display = timestamp[:16] if timestamp else "Неизвестно"
-            
-            display_url = link_url[:50] + "..." if len(link_url) > 50 else link_url
-            
-            links_text += f"{i}. {display_url}\n   👤 {username_display} | 📅 {date_display}\n\n"
-        
-        if len(links) > 20:
-            links_text += f"... и ещё {len(links) - 20} ссылок\n"
-        
-        links_text += f"\n📊 Всего ссылок в базе: {len(links)}"
-        
-        bot.reply_to(message, links_text)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in ALLLINKS command: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка получения списка ссылок")
-
-@bot.message_handler(commands=['recent'])
-def cmd_recent_links(message):
-    if not is_admin(message.from_user.id):
-        return
-    
-    try:
-        with db.get_connection() as conn:
-            cursor = conn.cursor()
-            
-            cursor.execute('''
-                SELECT link_url, username, timestamp 
-                FROM link_history 
-                LEFT JOIN user_links ON link_history.user_id = user_links.user_id
-                ORDER BY timestamp DESC
-                LIMIT 10
-            ''')
-            
-            recent_links = cursor.fetchall()
-        
-        if not recent_links:
-            bot.reply_to(message, "📋 В базе данных пока нет ссылок")
-            return
-        
-        recent_text = f"🕐 Последние {len(recent_links)} ссылок v21-fixed:\n\n"
-        
-        for i, (link_url, username, timestamp) in enumerate(recent_links, 1):
-            username_display = f"@{username}" if username else "Неизвестный"
-            date_display = timestamp[:16] if timestamp else "Неизвестно"
-            
-            display_url = link_url[:60] + "..." if len(link_url) > 60 else link_url
-            
-            recent_text += f"{i}. {display_url}\n   👤 {username_display} | 📅 {date_display}\n\n"
-        
-        bot.reply_to(message, recent_text)
-        
-    except Exception as e:
-        logger.error(f"❌ Error in RECENT command: {str(e)}")
-        bot.reply_to(message, "❌ Ошибка получения последних ссылок")
-
-# === СПЕЦИАЛЬНЫЕ ОБРАБОТЧИКИ ===
-
-@bot.message_handler(func=lambda message: message.text and '@misterdms_presave_bot' in message.text and message.text.strip().startswith('/'))
-def handle_tagged_commands(message):
-    """Обработчик команд с @botname - ИСПРАВЛЕН"""
-    try:
-        command_text = message.text.strip()
-        clean_command = command_text.split('@')[0]
-        
-        # Создаем временную копию сообщения с очищенной командой
-        temp_message = message
-        temp_message.text = clean_command
-        
-        # Маршрутизация команд
-        command_map = {
-            '/stats': cmd_stats,
-            '/help': cmd_help,
-            '/botstat': cmd_bot_stat,
-            '/linkstats': cmd_link_stats,
-            '/alllinks': cmd_all_links,
-            '/recent': cmd_recent_links,
-            '/activate': cmd_activate,
-            '/deactivate': cmd_deactivate,
-            '/modes': cmd_modes,
-            '/setmode': cmd_set_mode,
-            '/currentmode': cmd_current_mode,
-            '/reloadmodes': cmd_reload_modes,
-        }
-        
-        handler = command_map.get(clean_command)
-        if handler:
-            logger.info(f"🎯 TAGGED_COMMAND: Processing {clean_command} from {message.from_user.id}")
-            handler(temp_message)
-        else:
-            logger.info(f"❓ UNKNOWN_TAGGED: Command {clean_command} not found")
-            
-    except Exception as e:
-        logger.error(f"❌ Error in TAGGED_COMMANDS: {str(e)}")
-
-@bot.message_handler(func=lambda message: message.text and message.text.startswith('/'))
-def global_command_logger(message):
-    """Глобальный логгер команд для диагностики"""
-    command_text = message.text
-    user_id = message.from_user.id
-    username = message.from_user.username or "No_username"
-    chat_id = message.chat.id
-    thread_id = getattr(message, 'message_thread_id', None)
-    
-    logger.info(f"🌐 GLOBAL: Command '{command_text}' from user {user_id} (@{username}) in chat {chat_id}, thread {thread_id}")
-    
-    if '@' in command_text:
-        if '@misterdms_presave_bot' in command_text:
-            logger.info(f"✅ TARGETED: Command for our bot")
-        else:
-            logger.info(f"➡️ OTHER_BOT: Command for different bot")
-    
-    is_admin_user = is_admin(user_id)
-    logger.info(f"👑 ADMIN_CHECK: User {user_id} admin status: {is_admin_user}")
-    
-    in_correct_chat = (chat_id == GROUP_ID)
-    in_correct_thread = (thread_id == THREAD_ID)
-    logger.info(f"📍 LOCATION: Correct chat: {in_correct_chat}, Correct thread: {in_correct_thread}")
 
 # === ОСНОВНОЙ ОБРАБОТЧИК СООБЩЕНИЙ ===
 
@@ -1572,7 +2547,6 @@ def handle_topic_message(message):
     if not links:
         return
     
-    # Проверяем лимиты с АКТУАЛЬНЫМИ значениями
     can_respond, reason = db.can_send_response()
     logger.info(f"🚦 RATE_LIMIT: Can respond: {can_respond}, reason: '{reason}'")
     
@@ -1600,57 +2574,54 @@ def handle_topic_message(message):
         logger.error(f"💥 ERROR: Exception in message processing: {str(e)}")
 
 def setup_webhook():
-    """Настройка webhook с улучшенной безопасностью"""
+    """Настройка webhook"""
     try:
         bot.remove_webhook()
         
-        # Настройка webhook с secret token для безопасности
         webhook_kwargs = {"url": WEBHOOK_URL}
         if WEBHOOK_SECRET:
             webhook_kwargs["secret_token"] = WEBHOOK_SECRET
             logger.info("🔐 WEBHOOK: Using secret token for enhanced security")
         
         webhook_result = bot.set_webhook(**webhook_kwargs)
-        logger.info(f"✅ WEBHOOK_SET: Webhook configured successfully with security")
+        logger.info(f"✅ WEBHOOK_SET: Webhook configured successfully")
         return True
     except Exception as e:
         logger.error(f"❌ WEBHOOK_ERROR: Failed to setup webhook: {str(e)}")
         return False
 
 def main():
-    """Основная функция запуска бота v21"""
+    """Основная функция запуска бота v22"""
     try:
-        logger.info("🚀 STARTUP: Starting Presave Reminder Bot v21-fixed")
+        logger.info("🚀 STARTUP: Starting Presave Reminder Bot v22")
         logger.info(f"🔧 CONFIG: GROUP_ID={GROUP_ID}, THREAD_ID={THREAD_ID}")
-        logger.info(f"🔐 SECURITY: Enhanced webhook protection enabled")
-        logger.info(f"⚡ DATABASE: Connection pooling with {DB_POOL_SIZE} connections")
+        logger.info(f"📱 FEATURES: Inline buttons, user permissions, state management")
         
         # Инициализация базы данных
         db.init_db()
         
-        # Загружаем режимы из переменных окружения
         reload_rate_limit_modes()
         current_mode = db.get_current_rate_mode()
         current_limits = get_current_limits()
         
-        logger.info("🤖 Presave Reminder Bot v21-fixed запущен!")
+        logger.info("🤖 Presave Reminder Bot v22 запущен!")
         logger.info(f"👥 Группа: {GROUP_ID}")
         logger.info(f"📋 Топик: {THREAD_ID}")
         logger.info(f"👑 Админы: {ADMIN_IDS}")
-        logger.info(f"🎛️ РЕЖИМ: {current_limits['mode_name']} ({current_limits['max_responses_per_hour']}/час, {current_limits['min_cooldown_seconds']}с)")
+        logger.info(f"🎛️ РЕЖИМ: {current_limits['mode_name']} ({current_limits['max_responses_per_hour']}/час)")
+        logger.info(f"📱 INLINE: Поддержка кнопок активна")
+        logger.info(f"👥 USER_PERMISSIONS: Расширенные права пользователей")
         
-        # Настройка webhook
         if setup_webhook():
-            logger.info("🔗 Webhook режим активен с улучшенной безопасностью")
+            logger.info("🔗 Webhook режим активен с поддержкой inline кнопок")
         else:
             logger.error("❌ Ошибка настройки webhook")
             return
         
-        # Запуск webhook сервера
         with socketserver.TCPServer(("", WEBHOOK_PORT), WebhookHandler) as httpd:
             logger.info(f"🌐 Webhook сервер запущен на порту {WEBHOOK_PORT}")
             logger.info(f"🔗 URL: {WEBHOOK_URL}")
-            logger.info("✅ READY: Bot v21-fixed is fully operational with enhanced stability")
+            logger.info("✅ READY: Bot v22 is fully operational with inline buttons & user permissions")
             httpd.serve_forever()
         
     except Exception as e:
