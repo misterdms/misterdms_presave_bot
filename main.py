@@ -1,4 +1,4 @@
-# PRESAVE REMINDER BOT v23.4 - ИСПРАВЛЕННАЯ ВЕРСИЯ
+# PRESAVE REMINDER BOT v23.73 - ИСПРАВЛЕННАЯ ВЕРСИЯ
 # Интерактивная система пресейвов с улучшенными меню и полной аналитикой
 # ИСПРАВЛЕНЫ КРИТИЧЕСКИЕ ОШИБКИ
 
@@ -3505,7 +3505,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
         
         if self.path == WEBHOOK_PATH:
-try:
+            try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 
                 # Проверка безопасности (не блокирующая для отладки)
