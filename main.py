@@ -1,4 +1,4 @@
-# PRESAVE REMINDER BOT v23.75 - ИСПРАВЛЕННАЯ ВЕРСИЯ
+# PRESAVE REMINDER BOT v23.76 - ИСПРАВЛЕННАЯ ВЕРСИЯ
 # Интерактивная система пресейвов с улучшенными меню и полной аналитикой
 # ИСПРАВЛЕНЫ КРИТИЧЕСКИЕ ОШИБКИ + MARKDOWN PARSING + РАСШИРЕННЫЕ ПЛАТФОРМЫ
 
@@ -49,13 +49,13 @@ WEBHOOK_SECRET = os.getenv('WEBHOOK_SECRET', None)
 DB_POOL_SIZE = int(os.getenv('DB_POOL_SIZE', '5'))
 WEBHOOK_RATE_LIMIT = int(os.getenv('WEBHOOK_RATE_LIMIT', '100'))
 
-# === СИСТЕМА ПРАВ ПОЛЬЗОВАТЕЛЕЙ v23.75 ===
+# === СИСТЕМА ПРАВ ПОЛЬЗОВАТЕЛЕЙ v23.76 ===
 USER_PERMISSIONS = {
     'admin': 'all',  # Все команды
     'user': ['help', 'linkstats', 'topusers', 'userstat', 'mystat', 'alllinks', 'recent', 'presave_claim']
 }
 
-# === ПОЛЬЗОВАТЕЛЬСКИЕ СОСТОЯНИЯ v23.75 ===
+# === ПОЛЬЗОВАТЕЛЬСКИЕ СОСТОЯНИЯ v23.76 ===
 USER_STATES = {
     'waiting_username': 'Ожидание ввода username',
     'waiting_new_message': 'Ожидание нового текста напоминания',
@@ -66,7 +66,7 @@ USER_STATES = {
     'waiting_username_for_comparison': 'Ожидание username для сравнительного анализа'
 }
 
-# === PRESAVE SYSTEM PATTERNS v23.75 ===
+# === PRESAVE SYSTEM PATTERNS v23.76 ===
 PRESAVE_CLAIM_PATTERNS = {
     'basic': [
         r'сделал\s+пресейв',
@@ -142,7 +142,7 @@ def extract_platforms(text):
     return found_platforms
 
 def extract_links(text: str) -> list:
-    """Извлечение ссылок из текста - РАСШИРЕННАЯ ВЕРСИЯ v23.75"""
+    """Извлечение ссылок из текста - РАСШИРЕННАЯ ВЕРСИЯ v23.76"""
     if not text:
         return []
     
@@ -270,7 +270,7 @@ class DatabasePool:
             self.pool.put(conn)
 
 class InputValidator:
-    """Улучшенная валидация входных данных v23.75"""
+    """Улучшенная валидация входных данных v23.76"""
     
     @staticmethod
     def sanitize_username(username: str) -> str:
@@ -383,7 +383,7 @@ class SecurityValidator(InputValidator):
 rate_limiter = WebhookRateLimiter()
 security = SecurityValidator()
 
-# === СИСТЕМА РОЛЕЙ И ПРАВ v23.75 ===
+# === СИСТЕМА РОЛЕЙ И ПРАВ v23.76 ===
 
 def get_user_role(user_id: int) -> str:
     """Определение роли пользователя"""
@@ -417,7 +417,7 @@ def is_admin(user_id: int) -> bool:
     """Проверка прав администратора"""
     return user_id in ADMIN_IDS
 
-# === КОММЕНТАРИИ ДЛЯ БУДУЩЕЙ AI ИНТЕГРАЦИИ v23.75 ===
+# === КОММЕНТАРИИ ДЛЯ БУДУЩЕЙ AI ИНТЕГРАЦИИ v23.76 ===
 
 class AIMessageAnalyzer:
     """AI помощник для анализа сообщений (ЭТАП 2)"""
@@ -541,7 +541,7 @@ def reload_rate_limit_modes():
     RATE_LIMIT_MODES = load_rate_limit_modes()
     logger.info("🔄 RELOAD: Rate limit modes reloaded from environment variables")
 
-# === БАЗА ДАННЫХ С РАСШИРЕНИЯМИ v23.75 ===
+# === БАЗА ДАННЫХ С РАСШИРЕНИЯМИ v23.76 ===
 
 class Database:
     def __init__(self, db_path: str = "bot.db"):
@@ -553,7 +553,7 @@ class Database:
         return self.pool.get_connection()
     
     def init_db(self):
-        """Инициализация базы данных с новыми таблицами v23.75"""
+        """Инициализация базы данных с новыми таблицами v23.76"""
         with self.get_connection() as conn:
             cursor = conn.cursor()
             
@@ -612,7 +612,7 @@ class Database:
                 )
             ''')
             
-            # === ТАБЛИЦЫ ДЛЯ ПРЕСЕЙВОВ v23.75 ===
+            # === ТАБЛИЦЫ ДЛЯ ПРЕСЕЙВОВ v23.76 ===
             
             cursor.execute('''
                 CREATE TABLE IF NOT EXISTS presave_claims (
@@ -695,7 +695,7 @@ class Database:
             )
             
             conn.commit()
-            logger.info("✅ DATABASE: Database initialized successfully with v23.75 presave features")
+            logger.info("✅ DATABASE: Database initialized successfully with v23.76 presave features")
 
     # === МЕТОДЫ ДЛЯ СОСТОЯНИЙ ПОЛЬЗОВАТЕЛЕЙ ===
     
@@ -967,10 +967,10 @@ class Database:
 # Инициализация базы данных
 db = Database()
 
-# === ИНТЕРАКТИВНАЯ СИСТЕМА ЗАЯВЛЕНИЯ ПРЕСЕЙВА v23.75 ===
+# === ИНТЕРАКТИВНАЯ СИСТЕМА ЗАЯВЛЕНИЯ ПРЕСЕЙВА v23.76 ===
 
 class InteractivePresaveSystem:
-    """Пошаговая система заявления пресейва - Thread-Safe v23.75"""
+    """Пошаговая система заявления пресейва - Thread-Safe v23.76"""
     
     def __init__(self, db_connection, bot_instance):
         self.db = db_connection
@@ -1076,7 +1076,7 @@ class InteractivePresaveSystem:
         
         # Отправляем первый вопрос
         response = """
-🎵 **Создание заявления о пресейве v23.75**
+🎵 **Создание заявления о пресейве v23.76**
 
 📝 **Шаг 1 из 2:** Отправьте ссылки на музыку
 
@@ -1291,7 +1291,7 @@ https://band.link/mytrack
         except Exception as e:
             logger.error(f"❌ Error saving presave claim: {e}")
 
-# === РАСШИРЕННАЯ АДМИНСКАЯ АНАЛИТИКА v23.75 ===
+# === РАСШИРЕННАЯ АДМИНСКАЯ АНАЛИТИКА v23.76 ===
 
 class AdminAnalytics:
     """Расширенные админские инструменты"""
@@ -1455,7 +1455,7 @@ class AdminAnalytics:
             
             return response
 
-# === БАЗОВЫЕ УВЕДОМЛЕНИЯ АДМИНАМ v23.75 ===
+# === БАЗОВЫЕ УВЕДОМЛЕНИЯ АДМИНАМ v23.76 ===
 
 class BasicAdminNotifications:
     """Базовые уведомления для админов"""
@@ -1519,7 +1519,7 @@ class BasicAdminNotifications:
         #     except Exception as e:
         #         logger.error(f"Failed to notify admin {admin_id}: {e}")
 
-# === РАСШИРЕННЫЙ ОТВЕТ БОТА v23.75 ===
+# === РАСШИРЕННЫЙ ОТВЕТ БОТА v23.76 ===
 
 def generate_enhanced_bot_response(user_id, links):
     """Генерируем расширенный ответ с последними ссылками"""
@@ -1567,14 +1567,14 @@ def get_recent_links_with_authors(limit=10):
         # Возвращаем только ссылку и автора
         return [(link, username or 'Анонимный') for link, username, _ in results]
 
-# === УЛУЧШЕННЫЕ INLINE МЕНЮ v23.75 ===
+# === УЛУЧШЕННЫЕ INLINE МЕНЮ v23.76 ===
 
 class InlineMenus:
-    """Система улучшенных inline меню согласно плану v23.75"""
+    """Система улучшенных inline меню согласно плану v23.76"""
     
     @staticmethod
     def create_user_menu() -> InlineKeyboardMarkup:
-        """Пользовательское меню согласно плану v23.75"""
+        """Пользовательское меню согласно плану v23.76"""
         markup = InlineKeyboardMarkup(row_width=2)
         
         # Секция "Моя статистика"
@@ -1596,7 +1596,7 @@ class InlineMenus:
     
     @staticmethod
     def create_admin_menu() -> InlineKeyboardMarkup:
-        """Админское меню согласно плану v23.75"""
+        """Админское меню согласно плану v23.76"""
         markup = InlineKeyboardMarkup(row_width=2)
         
         # Секция "Моя статистика" (как у пользователя)
@@ -1662,7 +1662,7 @@ class InlineMenus:
             InlineKeyboardButton("🔗 Список моих ссылок", callback_data="list_my_links")
         )
         
-        # Пресейвы (новая функция v23.75)
+        # Пресейвы (новая функция v23.76)
         markup.add(
             InlineKeyboardButton("🎵 Мои пресейвы: скоро", callback_data="view_my_presaves")
         )
@@ -2025,9 +2025,82 @@ admin_notifications = BasicAdminNotifications(db, bot)
 # ИСПРАВЛЕНИЕ 3: Определяем глобальные переменные для статистики
 all_users = []  # Будет заполняться при запуске
 
+# === УНИВЕРСАЛЬНЫЙ ОБРАБОТЧИК КОМАНД v23.76 ===
+# ВАЖНО: Должен быть ПЕРВЫМ среди всех обработчиков!
+
+@bot.message_handler(func=lambda message: message.text and message.text.startswith('/'))
+def handle_all_commands(message):
+    """Универсальный обработчик ВСЕХ команд - выполняется ПЕРВЫМ v23.76"""
+    
+    # Извлекаем команду (убираем @ и параметры)
+    command_text = message.text.split()[0]
+    if '@' in command_text:
+        command_text = command_text.split('@')[0]
+    
+    command = command_text[1:]  # Убираем /
+    user_id = message.from_user.id
+    
+    logger.info(f"🎯 COMMAND_HANDLER: Processing /{command} from user {user_id}")
+    
+    # Диспетчер команд
+    command_handlers = {
+        'start': cmd_start,
+        'help': cmd_help,
+        'menu': cmd_menu,
+        'activate': cmd_activate, 
+        'deactivate': cmd_deactivate,
+        'mystat': cmd_my_stat,
+        'linkstats': cmd_linkstats,
+        'topusers': cmd_topusers,
+        'userstat': cmd_userstat,
+        'alllinks': cmd_alllinks,
+        'recent': cmd_recent,
+        'stats': cmd_stats,
+        'botstat': cmd_botstat,
+        'modes': cmd_modes,
+        'setmode': cmd_setmode,
+        'setmessage': cmd_setmessage,
+        'clearhistory': cmd_clearhistory,
+        'test_links': cmd_test_links,
+        'platforms': cmd_platforms,
+        'test_presave_system': cmd_test_presave_system_v23_4,
+        'full_diagnosis': cmd_full_diagnosis,
+        'check_bot_rights': cmd_check_bot_rights,
+        'test_group': cmd_test_group,
+        'webhook_status': cmd_webhook_status,
+        'check_env': cmd_check_env,
+        'full_test': cmd_full_test,
+        'test_keepalive': cmd_test_keepalive
+    }
+    
+    # Проверка прав доступа
+    user_commands = ['start', 'help', 'menu', 'linkstats', 'topusers', 'userstat', 'mystat', 'alllinks', 'recent', 'test_links', 'platforms']
+    admin_commands = ['activate', 'deactivate', 'stats', 'botstat', 'modes', 'setmode', 'setmessage', 'clearhistory', 
+                     'test_presave_system', 'full_diagnosis', 'check_bot_rights', 'test_group', 'webhook_status', 
+                     'check_env', 'full_test', 'test_keepalive']
+    
+    if command in admin_commands and not is_admin(user_id):
+        logger.warning(f"🚫 ACCESS_DENIED: User {user_id} tried admin command /{command}")
+        bot.reply_to(message, "❌ У вас нет прав для выполнения этой команды")
+        return
+    
+    if command in command_handlers:
+        try:
+            logger.info(f"✅ COMMAND_FOUND: Executing /{command}")
+            command_handlers[command](message)
+        except Exception as e:
+            logger.error(f"❌ COMMAND_ERROR: /{command} failed: {e}")
+            bot.reply_to(message, f"❌ Ошибка выполнения команды /{command}")
+    else:
+        logger.warning(f"⚠️ UNKNOWN_COMMAND: /{command}")
+        bot.reply_to(message, f"❌ Неизвестная команда /{command}. Используйте /help")
+
 # === ИСПРАВЛЕНИЕ 4: Улучшенная обработка состояний ===
 
-@bot.message_handler(func=lambda message: db.get_user_state(message.from_user.id)[0] is not None)
+@bot.message_handler(func=lambda message: (
+    db.get_user_state(message.from_user.id)[0] is not None and
+    not (message.text and message.text.startswith('/'))  # НЕ обрабатываем команды!
+))
 def handle_user_states(message):
     """Обработка состояний пользователей - ИСПРАВЛЕНА"""
     user_id = message.from_user.id
@@ -2123,7 +2196,7 @@ def handle_user_states(message):
 📅 Последняя активность: {last_updated[:16]}
 🏆 Звание: {rank_emoji} {rank_name}
 
-✨ v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ: Интерактивная система пресейвов готова!
+✨ v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ: Интерактивная система пресейвов готова!
             """
             
             bot.reply_to(message, stat_text)
@@ -2137,7 +2210,7 @@ def handle_user_states(message):
         if state not in ['waiting_presave_links', 'waiting_presave_comment']:
             db.clear_user_state(user_id)
 
-# === ОБРАБОТЧИКИ ПРЕСЕЙВОВ v23.75 ===
+# === ОБРАБОТЧИКИ ПРЕСЕЙВОВ v23.76 ===
 
 @bot.message_handler(func=lambda m: (
     m.chat.id == GROUP_ID and 
@@ -2148,7 +2221,7 @@ def handle_user_states(message):
     is_presave_claim(m.text)
 ))
 def handle_presave_claim_v23_4(message):
-    """Обработчик заявлений о пресейвах v23.75"""
+    """Обработчик заявлений о пресейвах v23.76"""
     try:
         user_id = message.from_user.id
         username = message.from_user.username or f"user_{user_id}"
@@ -2192,7 +2265,7 @@ def handle_presave_claim_v23_4(message):
 📊 ID: {claim_id}
 📱 Платформы: {', '.join(platforms) if platforms else 'автоопределение'}
 
-✅ **v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Заявление сохранено и отправлено на модерацию
+✅ **v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Заявление сохранено и отправлено на модерацию
 ⏳ Ожидайте подтверждения от администратора
 
 💡 **Совет:** Используйте /menu → "Заявить пресейв" для более удобного интерактивного процесса!
@@ -2215,7 +2288,7 @@ def handle_presave_claim_v23_4(message):
     is_admin_verification(m)
 ))
 def handle_admin_verification_v23_4(message):
-    """Обработчик подтверждений админов v23.75"""
+    """Обработчик подтверждений админов v23.76"""
     try:
         admin_id = message.from_user.id
         admin_username = message.from_user.username or f"admin_{admin_id}"
@@ -2275,7 +2348,7 @@ def handle_admin_verification_v23_4(message):
 
 🎉 Заявление принято и засчитано в статистику!
 
-💡 **v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Автоматическое обновление рейтингов и статистики
+💡 **v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Автоматическое обновление рейтингов и статистики
                     """
                     
                     safe_send_message(
@@ -2299,28 +2372,22 @@ def handle_admin_verification_v23_4(message):
     except Exception as e:
         logger.error(f"❌ ADMIN_VERIFICATION_ERROR: {str(e)}")
 
-# === ДИАГНОСТИЧЕСКИЙ ОБРАБОТЧИК v23.75 ===
+# === ДИАГНОСТИЧЕСКИЙ ОБРАБОТЧИК v23.76 ===
 
-@bot.message_handler(func=lambda message: True)
+@bot.message_handler(func=lambda message: (
+    message.text and 
+    not message.text.startswith('/') and  # НЕ обрабатываем команды!
+    message.chat.id not in [GROUP_ID] and  # НЕ обрабатываем основную группу
+    not message.from_user.is_bot  # НЕ обрабатываем ботов
+))
 def debug_message_handler(message):
-    """Диагностический обработчик для отладки - выполняется последним"""
-    logger.info(f"🔍 DEBUG_HANDLER: Message from user {message.from_user.id} in chat {message.chat.id}")
+    """Диагностический обработчик для неопознанных сообщений - ИСПРАВЛЕН v23.76"""
+    logger.info(f"🔍 DEBUG_HANDLER: Unhandled message from user {message.from_user.id} in chat {message.chat.id}")
     logger.info(f"🔍 DEBUG_HANDLER: Text: '{message.text[:100] if message.text else 'No text'}'")
     logger.info(f"🔍 DEBUG_HANDLER: Thread ID: {getattr(message, 'message_thread_id', 'None')}")
     logger.info(f"🔍 DEBUG_HANDLER: Chat type: {message.chat.type}")
-    
-    # Проверяем является ли это командой
-    if message.text and message.text.startswith('/'):
-        logger.warning(f"⚠️ DEBUG_HANDLER: Unhandled command: {message.text}")
-        
-        # Если это команда test_group, дополнительная диагностика
-        if 'test_group' in message.text.lower():
-            logger.warning(f"🧪 DEBUG_HANDLER: test_group command not handled properly!")
-            logger.warning(f"🧪 DEBUG_HANDLER: User role: {get_user_role(message.from_user.id)}")
-            logger.warning(f"🧪 DEBUG_HANDLER: Is admin: {message.from_user.id in ADMIN_IDS}")
-            logger.warning(f"🧪 DEBUG_HANDLER: ADMIN_IDS: {ADMIN_IDS}")
 
-# === ОСНОВНОЙ ОБРАБОТЧИК СООБЩЕНИЙ v23.75 ===
+# === ОСНОВНОЙ ОБРАБОТЧИК СООБЩЕНИЙ v23.76 ===
 
 @bot.message_handler(func=lambda message: (
     message.chat.id == GROUP_ID and 
@@ -2330,7 +2397,7 @@ def debug_message_handler(message):
     not message.from_user.is_bot
 ))
 def handle_topic_message_v23_4(message):
-    """Обработчик сообщений в топике пресейвов v23.75 - ИСПРАВЛЕН"""
+    """Обработчик сообщений в топике пресейвов v23.76 - ИСПРАВЛЕН"""
     
     user_id = message.from_user.id
     username = message.from_user.username or f"user_{user_id}"
@@ -2389,13 +2456,13 @@ def handle_topic_message_v23_4(message):
             logger.error(f"❌ FAILED: Could not send enhanced response for user {username}")
         
     except Exception as e:
-        logger.error(f"💥 ERROR: Exception in message processing v23.75: {str(e)}")
+        logger.error(f"💥 ERROR: Exception in message processing v23.76: {str(e)}")
         logger.error(f"💥 ERROR_DETAILS: User: {username}, Links: {len(links)}, Text: '{message_text[:100]}'")
 
 # === ИСПРАВЛЕНИЕ 2: ОБЪЕДИНЕННЫЙ CALLBACK HANDLER ===
 
 class CallbackRouter:
-    """ПОЛНАЯ система обработки callback'ов v23.75 - ИСПРАВЛЕНО"""
+    """ПОЛНАЯ система обработки callback'ов v23.76 - ИСПРАВЛЕНО"""
     
     def __init__(self, db, menus, interactive_presave_system, admin_analytics):
         self.db = db
@@ -2479,10 +2546,10 @@ class CallbackRouter:
         """Обработка главного меню"""
         if user_role == 'admin':
             markup = self.menus.create_admin_menu()
-            text = "👑 Админское меню v23.75:"
+            text = "👑 Админское меню v23.76:"
         else:
             markup = self.menus.create_user_menu()
-            text = "👥 Пользовательское меню v23.75:"
+            text = "👥 Пользовательское меню v23.76:"
         
         bot.edit_message_text(
             text,
@@ -2827,7 +2894,7 @@ callback_router = None
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_all_callbacks(call):
-    """ИСПРАВЛЕННЫЙ обработчик callback'ов v23.75"""
+    """ИСПРАВЛЕННЫЙ обработчик callback'ов v23.76"""
     global callback_router
     
     try:
@@ -2900,7 +2967,7 @@ def execute_test_presave_system_callback(call):
         all_passed = all("✅" in result for result in test_results)
         
         result_text = f"""
-🧪 **Тест системы пресейвов v23.75:**
+🧪 **Тест системы пресейвов v23.76:**
 
 📊 **РЕЗУЛЬТАТЫ:**
 {chr(10).join(test_results)}
@@ -2928,7 +2995,7 @@ def execute_test_keepalive_callback(call):
     try:
         try:
             request = urllib.request.Request(KEEPALIVE_URL)
-            request.add_header('User-Agent', 'TelegramBot/v23.75-test')
+            request.add_header('User-Agent', 'TelegramBot/v23.76-test')
             
             with urllib.request.urlopen(request, timeout=10) as response:
                 status_code = response.getcode()
@@ -3015,7 +3082,7 @@ def execute_system_health_callback(call):
         health_report.append(f"⚡ Rate Mode: {current_mode}")
         
         health_text = f"""
-🔍 **Диагностика системы v23.75:**
+🔍 **Диагностика системы v23.76:**
 
 📊 **КОМПОНЕНТЫ:**
 {chr(10).join(health_report)}
@@ -3025,7 +3092,7 @@ def execute_system_health_callback(call):
 • Health: /health
 • Keepalive: /keepalive
 
-✨ **Статус:** Система v23.75 с исправленными ошибками
+✨ **Статус:** Система v23.76 с исправленными ошибками
         """
         
         markup = menus.create_back_button("diagnostics_menu")
@@ -3066,7 +3133,7 @@ def execute_bot_statistics_callback(call):
         usage_percent = round((stats['hourly_responses'] / max(stats['hourly_limit'], 1)) * 100, 1)
         
         stat_text = f"""
-📊 **Подробная статистика бота v23.75:**
+📊 **Подробная статистика бота v23.76:**
 
 🤖 **СОСТОЯНИЕ БОТА:**
 • Статус: {'🟢 Активен' if stats['is_active'] else '🔴 Отключен'}
@@ -3085,7 +3152,7 @@ def execute_bot_statistics_callback(call):
 
 ⚡ **ПРОИЗВОДИТЕЛЬНОСТЬ:**
 • Статус: {'🟡 Нагрузка' if usage_percent >= 80 else '✅ Норма'}
-• Версия: v23.75 ИСПРАВЛЕННАЯ
+• Версия: v23.76 ИСПРАВЛЕННАЯ
         """
         
         markup = menus.create_back_button("diagnostics_menu")
@@ -3120,7 +3187,7 @@ def execute_current_mode_callback(call):
         usage_percent = round((bot_stats['hourly_responses'] / max(max_responses, 1)) * 100, 1)
         
         current_text = f"""
-🎛️ **Текущий режим лимитов v23.75:**
+🎛️ **Текущий режим лимитов v23.76:**
 
 {mode_config['emoji']} **{mode_config['name']}**
 📝 {mode_config['description']}
@@ -3170,7 +3237,7 @@ def execute_bot_status_callback(call):
                 cooldown_text = "Ошибка cooldown"
         
         status_text = f"""
-🤖 **Статус бота v23.75:**
+🤖 **Статус бота v23.76:**
 
 {'🟢 АКТИВЕН' if bot_active else '🔴 ОТКЛЮЧЕН'}
 
@@ -3289,7 +3356,7 @@ def execute_verification_stats_callback(call):
         success_rate = (verified / max(total, 1)) * 100
         
         text = f"""
-📊 **Статистика подтверждений v23.75:**
+📊 **Статистика подтверждений v23.76:**
 
 📈 **ОБЩАЯ СТАТИСТИКА:**
 • Всего заявлений: {total}
@@ -3344,7 +3411,7 @@ def execute_alllinks_callback(call):
         if not links:
             text = "📋 В базе данных пока нет ссылок"
         else:
-            text = f"📋 **Все ссылки в базе v23.75** (последние 20):\n\n"
+            text = f"📋 **Все ссылки в базе v23.76** (последние 20):\n\n"
             
             for i, (link_url, username, timestamp) in enumerate(links[:20], 1):
                 username_display = f"@{username}" if username else "Неизвестный"
@@ -3394,7 +3461,7 @@ def execute_recent_callback(call):
         if not recent_links:
             text = "📋 В базе данных пока нет ссылок"
         else:
-            text = f"🕐 **Последние {len(recent_links)} ссылок v23.75:**\n\n"
+            text = f"🕐 **Последние {len(recent_links)} ссылок v23.76:**\n\n"
             
             for i, (link_url, username, timestamp) in enumerate(recent_links, 1):
                 username_display = f"@{username}" if username else "Неизвестный"
@@ -3426,7 +3493,7 @@ def execute_help_callback(call):
     
     if user_role == 'admin':
         help_text = """
-🤖 **Presave Reminder Bot v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ** (Администратор):
+🤖 **Presave Reminder Bot v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ** (Администратор):
 
 🆕 **ИСПРАВЛЕННЫЕ ФУНКЦИИ:**
 • 🎵 Интерактивная система заявления пресейвов
@@ -3459,7 +3526,7 @@ def execute_help_callback(call):
         back_menu = "admin_actions_menu"
     else:
         help_text = """
-🤖 **Presave Reminder Bot v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ** (Пользователь):
+🤖 **Presave Reminder Bot v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ** (Пользователь):
 
 🆕 **ИСПРАВЛЕННЫЕ ФУНКЦИИ:**
 • 🎵 Интерактивное заявление пресейвов
@@ -3481,7 +3548,7 @@ def execute_help_callback(call):
 
 📱 Используйте кнопки для навигации!
 
-✅ **v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Все функции работают!
+✅ **v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Все функции работают!
         """
         back_menu = "user_actions_menu"
     
@@ -3494,15 +3561,14 @@ def execute_help_callback(call):
         parse_mode='Markdown'
     )
 
-# === КОМАНДЫ v23.75 ===
+# === КОМАНДЫ v23.76 ===
 
-@bot.message_handler(commands=['start'])
 def cmd_start(message):
     user_role = get_user_role(message.from_user.id)
     
     if user_role == 'admin':
         bot.reply_to(message, """
-🤖 Presave Reminder Bot v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ запущен!
+🤖 Presave Reminder Bot v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ запущен!
 
 🎵 ВСЕ КРИТИЧЕСКИЕ ОШИБКИ ИСПРАВЛЕНЫ:
 ✅ Callback обработчики объединены
@@ -3526,7 +3592,7 @@ def cmd_start(message):
         """)
     else:
         bot.reply_to(message, """
-🤖 Добро пожаловать в Presave Reminder Bot v23.75!
+🤖 Добро пожаловать в Presave Reminder Bot v23.76!
 
 🎵 ИСПРАВЛЕННЫЕ ВОЗМОЖНОСТИ:
 ✨ Интерактивная система заявления пресейвов
@@ -3541,13 +3607,12 @@ def cmd_start(message):
 🎵 Начните делиться музыкой и заявляйте пресейвы!
         """)
 
-@bot.message_handler(commands=['help'])
 def cmd_help(message):
     user_role = get_user_role(message.from_user.id)
     
     if user_role == 'admin':
         help_text = """
-🤖 Presave Reminder Bot v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ (Администратор):
+🤖 Presave Reminder Bot v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ (Администратор):
 
 🔧 ИСПРАВЛЕНЫ КРИТИЧЕСКИЕ ОШИБКИ:
 • Дублирование callback обработчиков
@@ -3569,7 +3634,7 @@ def cmd_help(message):
 /stats — общая статистика работы
 /botstat — мониторинг лимитов
 
-🔧 ДИАГНОСТИКА (НОВОЕ v23.75):
+🔧 ДИАГНОСТИКА (НОВОЕ v23.76):
 /full_diagnosis — полная проверка всех систем
 /check_bot_rights — проверка прав в группе  
 /test_group — тест получения сообщений в топике
@@ -3597,7 +3662,7 @@ def cmd_help(message):
         """
     else:
         help_text = """
-🤖 Presave Reminder Bot v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ (Пользователь):
+🤖 Presave Reminder Bot v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ (Пользователь):
 
 🔧 ИСПРАВЛЕНЫ ОШИБКИ:
 • Интерактивная система работает стабильно
@@ -3626,21 +3691,19 @@ def cmd_help(message):
 🎵 Используйте кнопки в /menu для удобства!
 Делитесь ссылками и заявляйте пресейвы!
 
-✅ v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ: Все функции работают!
+✅ v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ: Все функции работают!
         """
     
     bot.reply_to(message, help_text)
 
-@bot.message_handler(commands=['menu'])
-@check_permissions(['admin', 'user'])
 def cmd_menu(message):
-    """Показать главное меню с улучшенными кнопками v23.75"""
+    """Показать главное меню с улучшенными кнопками v23.76"""
     user_role = get_user_role(message.from_user.id)
     
     if user_role == 'admin':
         markup = menus.create_admin_menu()
         text = """
-👑 **Админское меню v23.75 - ИСПРАВЛЕННАЯ ВЕРСИЯ:**
+👑 **Админское меню v23.76 - ИСПРАВЛЕННАЯ ВЕРСИЯ:**
 
 📊 Моя статистика — детальная информация о вашей активности
 🏆 Лидерборд — табы по ссылкам, пресейвам, общему рейтингу  
@@ -3658,7 +3721,7 @@ def cmd_menu(message):
     else:
         markup = menus.create_user_menu()
         text = """
-👥 **Пользовательское меню v23.75 - ИСПРАВЛЕННАЯ ВЕРСИЯ:**
+👥 **Пользовательское меню v23.76 - ИСПРАВЛЕННАЯ ВЕРСИЯ:**
 
 📊 Моя статистика — ваши ссылки, звание, место в рейтинге
 🏆 Лидерборд — соревнуйтесь с другими участниками
@@ -3675,8 +3738,6 @@ def cmd_menu(message):
 
 # === ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ ===
 
-@bot.message_handler(commands=['mystat'])
-@check_permissions(['admin', 'user'])
 def cmd_my_stat(message):
     """Подробная статистика текущего пользователя"""
     user_id = message.from_user.id
@@ -3687,7 +3748,7 @@ def cmd_my_stat(message):
         
         if not user_data:
             bot.reply_to(message, """
-👤 **Ваша статистика v23.75:**
+👤 **Ваша статистика v23.76:**
 
 🔗 Всего ссылок: 0
 🏆 Звание: 🥉 Начинающий
@@ -3719,7 +3780,7 @@ def cmd_my_stat(message):
             week_activity = week_result[0] if week_result else 0
         
         stat_text = f"""
-👤 **Моя статистика v23.75 - ИСПРАВЛЕННАЯ ВЕРСИЯ:**
+👤 **Моя статистика v23.76 - ИСПРАВЛЕННАЯ ВЕРСИЯ:**
 
 🔗 Всего ссылок: {total_links}
 🏆 Звание: {rank_emoji} {rank_name}
@@ -3741,10 +3802,8 @@ def cmd_my_stat(message):
         logger.error(f"❌ Error in MYSTAT command: {str(e)}")
         bot.reply_to(message, "❌ Ошибка получения вашей статистики")
 
-@bot.message_handler(commands=['test_presave_system'])
-@check_permissions(['admin'])
 def cmd_test_presave_system_v23_4(message):
-    """Тестовая команда для проверки системы пресейвов v23.75"""
+    """Тестовая команда для проверки системы пресейвов v23.76"""
     try:
         test_results = []
         
@@ -3821,7 +3880,7 @@ def cmd_test_presave_system_v23_4(message):
         all_passed = all("✅" in result for result in test_results)
         
         result_text = f"""
-🧪 **Тест системы пресейвов v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:**
+🧪 **Тест системы пресейвов v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:**
 
 📊 **БАЗА ДАННЫХ:**
 {chr(10).join([r for r in test_results if 'записей' in r])}
@@ -3843,7 +3902,7 @@ def cmd_test_presave_system_v23_4(message):
 
 🎯 **СТАТУС:** {'✅ ВСЕ ТЕСТЫ ПРОЙДЕНЫ' if all_passed else '⚠️ ЕСТЬ ПРОБЛЕМЫ'}
 
-🆕 **ИСПРАВЛЕНО В v23.75:**
+🆕 **ИСПРАВЛЕНО В v23.76:**
 ✅ Дублирование callback обработчиков
 ✅ Проблемы с состояниями пользователей
 ✅ Неопределенные переменные (KEEPALIVE_URL, all_users)
@@ -3858,11 +3917,9 @@ def cmd_test_presave_system_v23_4(message):
         logger.info(f"🧪 PRESAVE_SYSTEM_TEST_V23_4: {'PASSED' if all_passed else 'FAILED'}")
         
     except Exception as e:
-        logger.error(f"❌ Error in v23.75 presave system test: {str(e)}")
+        logger.error(f"❌ Error in v23.76 presave system test: {str(e)}")
         bot.reply_to(message, f"❌ Ошибка тестирования: {str(e)}")
 
-@bot.message_handler(commands=['activate'])
-@check_permissions(['admin'])
 def cmd_activate(message):
     if message.chat.id != GROUP_ID or message.message_thread_id != THREAD_ID:
         bot.reply_to(message, "❌ Команда должна выполняться в топике пресейвов")
@@ -3874,7 +3931,7 @@ def cmd_activate(message):
     current_mode = db.get_current_rate_mode()
     
     welcome_text = f"""
-🤖 **Presave Reminder Bot v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ активирован!**
+🤖 **Presave Reminder Bot v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ активирован!**
 
 ✅ Готов к работе в топике "Пресейвы"
 🎯 Буду отвечать на сообщения со ссылками
@@ -3887,7 +3944,7 @@ def cmd_activate(message):
 • Переменные окружения корректные
 • Поддержка bandlink и других конструкторов
 
-🆕 **Новые возможности v23.75:**
+🆕 **Новые возможности v23.76:**
 • 🎵 Интерактивная система заявления пресейвов
 • 📊 Расширенные ответы с последними ссылками от участников
 • 🔔 Автоматические уведомления админам
@@ -3903,13 +3960,11 @@ def cmd_activate(message):
     
     bot.reply_to(message, welcome_text, parse_mode='Markdown')
 
-@bot.message_handler(commands=['deactivate'])
-@check_permissions(['admin'])
 def cmd_deactivate(message):
     db.set_bot_active(False)
     bot.reply_to(message, "🛑 Бот деактивирован. Для включения используйте /activate")
 
-# === WEBHOOK СЕРВЕР v23.75 ===
+# === WEBHOOK СЕРВЕР v23.76 ===
 
 class WebhookHandler(BaseHTTPRequestHandler):
     def do_POST(self):
@@ -4028,7 +4083,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         response = json.dumps({
             "status": "healthy", 
             "service": "telegram-bot",
-            "version": "v23.75-fixed-interactive-presave-system",
+            "version": "v23.76-fixed-interactive-presave-system",
             "fixes": ["callback_handlers_unified", "user_states_fixed", "variables_defined", "method_fixes", "bandlink_support"]
         })
         self.wfile.write(response.encode())
@@ -4077,7 +4132,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             response_data = {
                 "status": "alive",
                 "timestamp": time.time(),
-                "version": "v23.75-fixed-security-validation",
+                "version": "v23.76-fixed-security-validation",
                 "uptime_check": "✅ OK",
                 "details": {
                     "bot_active": bot_active,
@@ -4146,7 +4201,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             error_response = json.dumps({
                 "status": "error",
                 "timestamp": time.time(),
-                "version": "v23.75-fixed-security-validation",
+                "version": "v23.76-fixed-security-validation",
                 "error": str(e),
                 "uptime_check": "❌ CRITICAL_ERROR",
                 "fixes_applied": ["security_validation_relaxed", "localhost_handling_improved"]
@@ -4163,7 +4218,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         <!DOCTYPE html>
         <html>
         <head>
-            <title>Presave Reminder Bot v23.75 - ИСПРАВЛЕННАЯ ВЕРСИЯ</title>
+            <title>Presave Reminder Bot v23.76 - ИСПРАВЛЕННАЯ ВЕРСИЯ</title>
             <meta charset="utf-8">
             <style>
                 body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }}
@@ -4177,7 +4232,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
         </head>
         <body>
             <div class="header">
-                <h1>🤖 Presave Reminder Bot v23.75</h1>
+                <h1>🤖 Presave Reminder Bot v23.76</h1>
                 <h2>🔧 ИСПРАВЛЕННАЯ ВЕРСИЯ</h2>
             </div>
             
@@ -4199,7 +4254,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             
             <div class="status">
                 <h4>🚀 ГОТОВНОСТЬ К ПРОДАКШНУ</h4>
-                <p>v23.75 обеспечивает стабильную работу всех функций ЭТАПА 1:</p>
+                <p>v23.76 обеспечивает стабильную работу всех функций ЭТАПА 1:</p>
                 <ul>
                     <li>🎵 Интерактивная система заявления пресейвов</li>
                     <li>📊 Улучшенные меню с подробной навигацией</li>
@@ -4229,10 +4284,8 @@ class WebhookHandler(BaseHTTPRequestHandler):
         # Отключаем стандартное логирование для уменьшения шума
         pass
 
-# === ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ v23.75 ===
+# === ДОПОЛНИТЕЛЬНЫЕ КОМАНДЫ v23.76 ===
 
-@bot.message_handler(commands=['linkstats'])
-@check_permissions(['admin', 'user'])
 def cmd_linkstats(message):
     """Рейтинг пользователей по ссылкам"""
     try:
@@ -4252,7 +4305,7 @@ def cmd_linkstats(message):
         
         response += f"📈 **Всего участников:** {len(users)}\n"
         response += f"🔗 **Всего ссылок:** {sum(user[1] for user in users)}\n"
-        response += f"✨ **v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Интерактивная система пресейвов готова!"
+        response += f"✨ **v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Интерактивная система пресейвов готова!"
         
         bot.reply_to(message, response, parse_mode='Markdown')
         
@@ -4260,8 +4313,6 @@ def cmd_linkstats(message):
         logger.error(f"❌ Error in LINKSTATS: {e}")
         bot.reply_to(message, "❌ Ошибка получения рейтинга")
 
-@bot.message_handler(commands=['topusers'])
-@check_permissions(['admin', 'user'])
 def cmd_topusers(message):
     """Топ-5 активных пользователей"""
     try:
@@ -4290,8 +4341,6 @@ def cmd_topusers(message):
         logger.error(f"❌ Error in TOPUSERS: {e}")
         bot.reply_to(message, "❌ Ошибка получения топа")
 
-@bot.message_handler(commands=['userstat'])
-@check_permissions(['admin', 'user'])
 def cmd_userstat(message):
     """Статистика пользователя по username"""
     try:
@@ -4322,7 +4371,7 @@ def cmd_userstat(message):
 📅 Последняя активность: {last_updated[:16]}
 📊 Место в рейтинге: {position} из {len(all_users)}
 
-💡 **v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Попробуйте новую интерактивную систему заявления пресейвов через /menu!
+💡 **v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Попробуйте новую интерактивную систему заявления пресейвов через /menu!
         """
         
         bot.reply_to(message, response, parse_mode='Markdown')
@@ -4331,8 +4380,6 @@ def cmd_userstat(message):
         logger.error(f"❌ Error in USERSTAT: {e}")
         bot.reply_to(message, "❌ Ошибка получения статистики пользователя")
 
-@bot.message_handler(commands=['alllinks'])
-@check_permissions(['admin', 'user'])
 def cmd_alllinks(message):
     """Показать все ссылки из базы"""
     try:
@@ -4353,7 +4400,7 @@ def cmd_alllinks(message):
             bot.reply_to(message, "📋 В базе данных пока нет ссылок")
             return
         
-        response = f"📋 **Все ссылки в базе v23.75** (последние 20):\n\n"
+        response = f"📋 **Все ссылки в базе v23.76** (последние 20):\n\n"
         
         for i, (link_url, username, timestamp) in enumerate(links[:20], 1):
             username_display = f"@{username}" if username else "Неизвестный"
@@ -4374,8 +4421,6 @@ def cmd_alllinks(message):
         logger.error(f"❌ Error in ALLLINKS: {e}")
         bot.reply_to(message, "❌ Ошибка получения ссылок")
 
-@bot.message_handler(commands=['recent'])
-@check_permissions(['admin', 'user'])
 def cmd_recent(message):
     """Показать последние ссылки"""
     try:
@@ -4396,7 +4441,7 @@ def cmd_recent(message):
             bot.reply_to(message, "📋 В базе данных пока нет ссылок")
             return
         
-        response = f"🕐 **Последние {len(recent_links)} ссылок v23.75:**\n\n"
+        response = f"🕐 **Последние {len(recent_links)} ссылок v23.76:**\n\n"
         
         for i, (link_url, username, timestamp) in enumerate(recent_links, 1):
             username_display = f"@{username}" if username else "Неизвестный"
@@ -4412,8 +4457,6 @@ def cmd_recent(message):
         logger.error(f"❌ Error in RECENT: {e}")
         bot.reply_to(message, "❌ Ошибка получения последних ссылок")
 
-@bot.message_handler(commands=['stats'])
-@check_permissions(['admin'])
 def cmd_stats(message):
     """Общая статистика работы бота"""
     try:
@@ -4436,7 +4479,7 @@ def cmd_stats(message):
         current_mode = db.get_current_rate_mode()
         
         response = f"""
-📊 **Общая статистика бота v23.75:**
+📊 **Общая статистика бота v23.76:**
 
 🤖 **СОСТОЯНИЕ БОТА:**
 • Статус: {'🟢 Активен' if stats['is_active'] else '🔴 Отключен'}
@@ -4454,7 +4497,7 @@ def cmd_stats(message):
 • Подтверждено: {verified_claims}
 • Процент подтверждения: {(verified_claims/max(total_claims,1)*100):.1f}%
 
-✅ **v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Все критические ошибки устранены!
+✅ **v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Все критические ошибки устранены!
         """
         
         bot.reply_to(message, response, parse_mode='Markdown')
@@ -4463,8 +4506,6 @@ def cmd_stats(message):
         logger.error(f"❌ Error in STATS: {e}")
         bot.reply_to(message, "❌ Ошибка получения статистики")
 
-@bot.message_handler(commands=['botstat'])
-@check_permissions(['admin'])
 def cmd_botstat(message):
     """Статистика лимитов и производительности"""
     try:
@@ -4486,7 +4527,7 @@ def cmd_botstat(message):
                 cooldown_text = "Ошибка cooldown"
         
         response = f"""
-📊 **Статистика лимитов v23.75:**
+📊 **Статистика лимитов v23.76:**
 
 🎛️ **ТЕКУЩИЙ РЕЖИМ:**
 {current_limits['mode_emoji']} {current_mode.upper()}
@@ -4505,7 +4546,7 @@ def cmd_botstat(message):
 • /setmode <режим> - сменить режим
 • /menu - интерактивное управление
 
-✨ **v23.75 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Полная система готова!
+✨ **v23.76 ИСПРАВЛЕННАЯ ВЕРСИЯ:** Полная система готова!
         """
         
         bot.reply_to(message, response, parse_mode='Markdown')
@@ -4514,14 +4555,12 @@ def cmd_botstat(message):
         logger.error(f"❌ Error in BOTSTAT: {e}")
         bot.reply_to(message, "❌ Ошибка получения статистики лимитов")
 
-@bot.message_handler(commands=['modes'])
-@check_permissions(['admin'])
 def cmd_modes(message):
-    """Показать все доступные режимы - ИСПРАВЛЕНО v23.75"""
+    """Показать все доступные режимы - ИСПРАВЛЕНО v23.76"""
     try:
         current_mode = db.get_current_rate_mode()
         
-        response = "🎛️ ДОСТУПНЫЕ РЕЖИМЫ ЛИМИТОВ v23.75:\n\n"
+        response = "🎛️ ДОСТУПНЫЕ РЕЖИМЫ ЛИМИТОВ v23.76:\n\n"
         
         for mode_key, mode_config in RATE_LIMIT_MODES.items():
             emoji = mode_config['emoji']
@@ -4548,8 +4587,6 @@ def cmd_modes(message):
         logger.error(f"❌ Error in MODES: {e}")
         bot.reply_to(message, "❌ Ошибка получения режимов")
 
-@bot.message_handler(commands=['setmode'])
-@check_permissions(['admin'])
 def cmd_setmode(message):
     """Установить режим лимитов"""
     try:
@@ -4571,8 +4608,6 @@ def cmd_setmode(message):
         logger.error(f"❌ Error in SETMODE: {e}")
         bot.reply_to(message, "❌ Ошибка смены режима")
 
-@bot.message_handler(commands=['setmessage'])
-@check_permissions(['admin'])
 def cmd_setmessage(message):
     """Установить новый текст напоминания"""
     try:
@@ -4599,8 +4634,6 @@ def cmd_setmessage(message):
         logger.error(f"❌ Error in SETMESSAGE: {e}")
         bot.reply_to(message, "❌ Ошибка установки текста")
 
-@bot.message_handler(commands=['clearhistory'])
-@check_permissions(['admin'])
 def cmd_clearhistory(message):
     """Очистить историю ссылок"""
     try:
@@ -4611,8 +4644,6 @@ def cmd_clearhistory(message):
         logger.error(f"❌ Error in CLEARHISTORY: {e}")
         bot.reply_to(message, "❌ Ошибка очистки истории")
 
-@bot.message_handler(commands=['test_links'])
-@check_permissions(['admin', 'user']) 
 def cmd_test_links(message):
     """Тест распознавания различных типов ссылок"""
     test_links = [
@@ -4631,7 +4662,7 @@ def cmd_test_links(message):
         "https://youtube.com/watch?v=example"
     ]
     
-    result_text = "🔗 ТЕСТ РАСПОЗНАВАНИЯ ССЫЛОК v23.75:\n\n"
+    result_text = "🔗 ТЕСТ РАСПОЗНАВАНИЯ ССЫЛОК v23.76:\n\n"
     
     for link in test_links:
         extracted = extract_links(link)
@@ -4646,11 +4677,9 @@ def cmd_test_links(message):
     
     bot.reply_to(message, result_text)
 
-@bot.message_handler(commands=['platforms'])
-@check_permissions(['admin', 'user'])
 def cmd_platforms(message):
-    """Список поддерживаемых платформ - РАСШИРЕННЫЙ v23.75"""
-    platforms_text = """🎵 ПОДДЕРЖИВАЕМЫЕ ПЛАТФОРМЫ v23.75:
+    """Список поддерживаемых платформ - РАСШИРЕННЫЙ v23.76"""
+    platforms_text = """🎵 ПОДДЕРЖИВАЕМЫЕ ПЛАТФОРМЫ v23.76:
 
 📱 СТРИМИНГОВЫЕ СЕРВИСЫ:
 - 🎵 Spotify - open.spotify.com
@@ -4678,12 +4707,10 @@ def cmd_platforms(message):
 
 ✅ Все ссылки должны начинаться с https://
 
-🆕 НОВОЕ v23.75: Добавлены 9 новых конструкторов ссылок!"""
+🆕 НОВОЕ v23.76: Добавлены 9 новых конструкторов ссылок!"""
     
     bot.reply_to(message, platforms_text)
 
-@bot.message_handler(commands=['full_diagnosis'])
-@check_permissions(['admin'])
 def cmd_full_diagnosis(message):
     """Полная диагностика проблем с группой"""
     try:
@@ -4745,7 +4772,7 @@ def cmd_full_diagnosis(message):
             diagnosis_results.append(f"✅ Current thread ID: {message.message_thread_id}")
         
         result_text = f"""
-🔍 **ПОЛНАЯ ДИАГНОСТИКА БОТА v23.75:**
+🔍 **ПОЛНАЯ ДИАГНОСТИКА БОТА v23.76:**
 
 {chr(10).join(diagnosis_results)}
 
@@ -4764,8 +4791,6 @@ def cmd_full_diagnosis(message):
         logger.error(f"❌ Error in full diagnosis: {e}")
         bot.reply_to(message, f"❌ Ошибка диагностики: {str(e)}")
 
-@bot.message_handler(commands=['check_bot_rights'])
-@check_permissions(['admin'])
 def cmd_check_bot_rights(message):
     """Проверка прав бота в группе"""
     try:
@@ -4827,8 +4852,6 @@ def cmd_check_bot_rights(message):
         logger.error(f"❌ Error checking bot rights: {e}")
         bot.reply_to(message, f"❌ Ошибка проверки прав: {str(e)}")
 
-@bot.message_handler(commands=['test_group'])
-@check_permissions(['admin'])
 def cmd_test_group(message):
     """Тест получения сообщений в группе"""
     logger.info(f"🧪 TEST_GROUP: Called by user {message.from_user.id} in chat {message.chat.id}")
@@ -4865,15 +4888,13 @@ def cmd_test_group(message):
 - Выполните команду в супергруппе Кински
         """, parse_mode='Markdown')
 
-@bot.message_handler(commands=['webhook_status'])
-@check_permissions(['admin'])
 def cmd_webhook_status(message):
     """Проверка статуса webhook"""
     try:
         webhook_info = bot.get_webhook_info()
         
         result_text = f"""
-🔗 **Статус Webhook v23.75:**
+🔗 **Статус Webhook v23.76:**
 
 📊 **ИНФОРМАЦИЯ:**
 - URL: {webhook_info.url or 'НЕ НАСТРОЕН'}
@@ -4896,13 +4917,11 @@ def cmd_webhook_status(message):
         logger.error(f"❌ Error checking webhook status: {e}")
         bot.reply_to(message, f"❌ Ошибка проверки webhook: {str(e)}")
 
-@bot.message_handler(commands=['check_env'])
-@check_permissions(['admin'])
 def cmd_check_env(message):
     """Проверка переменных окружения"""
     try:
         result_text = f"""
-🔧 **Переменные окружения v23.75:**
+🔧 **Переменные окружения v23.76:**
 
 📊 **ОСНОВНЫЕ:**
 - BOT_TOKEN: {'✅ Настроен' if BOT_TOKEN else '❌ НЕТ'}
@@ -4931,10 +4950,8 @@ def cmd_check_env(message):
         logger.error(f"❌ Error checking environment: {e}")
         bot.reply_to(message, f"❌ Ошибка проверки окружения: {str(e)}")
 
-@bot.message_handler(commands=['full_test'])
-@check_permissions(['admin'])
 def cmd_full_test(message):
-    """Полный тест всех исправленных функций v23.75"""
+    """Полный тест всех исправленных функций v23.76"""
     try:
         test_results = []
         
@@ -4977,11 +4994,11 @@ def cmd_full_test(message):
         except Exception as e:
             test_results.append(f"❌ Webhook: ошибка {str(e)}")
         
-        result_text = f"""🧪 ПОЛНЫЙ ТЕСТ СИСТЕМЫ v23.75:
+        result_text = f"""🧪 ПОЛНЫЙ ТЕСТ СИСТЕМЫ v23.76:
 
 {chr(10).join(test_results)}
 
-🔧 ИСПРАВЛЕНИЯ v23.75:
+🔧 ИСПРАВЛЕНИЯ v23.76:
 ✅ Markdown parsing errors исправлены
 ✅ Декоратор check_permissions исправлен
 ✅ Добавлены 9 новых платформ
@@ -4996,14 +5013,12 @@ def cmd_full_test(message):
         logger.error(f"❌ Error in full test: {e}")
         bot.reply_to(message, f"❌ Ошибка полного тестирования: {str(e)}")
 
-@bot.message_handler(commands=['test_keepalive'])
-@check_permissions(['admin'])
 def cmd_test_keepalive(message):
     """Тестовая команда для проверки keepalive"""
     try:
         try:
             request = urllib.request.Request(KEEPALIVE_URL)
-            request.add_header('User-Agent', 'TelegramBot/v23.75-test')
+            request.add_header('User-Agent', 'TelegramBot/v23.76-test')
             
             with urllib.request.urlopen(request, timeout=10) as response:
                 status_code = response.getcode()
@@ -5020,7 +5035,7 @@ def cmd_test_keepalive(message):
                 telegram_check = 'unknown'
             
             result_text = f"""
-💓 **Тест keepalive эндпоинта v23.75:**
+💓 **Тест keepalive эндпоинта v23.76:**
 
 🔗 **URL:** {KEEPALIVE_URL}
 📊 **HTTP Status:** {status_code}
@@ -5036,7 +5051,7 @@ def cmd_test_keepalive(message):
             
         except Exception as e:
             result_text = f"""
-💓 **Тест keepalive эндпоинта v23.75:**
+💓 **Тест keepalive эндпоинта v23.76:**
 
 🔗 **URL:** {KEEPALIVE_URL}
 ❌ **Ошибка:** {str(e)}
@@ -5053,12 +5068,12 @@ def cmd_test_keepalive(message):
         logger.error(f"❌ Error in keepalive test: {e}")
         bot.reply_to(message, "❌ Ошибка тестирования keepalive")
 
-# === ФУНКЦИИ ИНИЦИАЛИЗАЦИИ v23.75 ===
+# === ФУНКЦИИ ИНИЦИАЛИЗАЦИИ v23.76 ===
 
 def setup_webhook():
-    """Настройка webhook v23.75"""
+    """Настройка webhook v23.76"""
     try:
-        logger.info("🔗 WEBHOOK_SETUP: Configuring webhook for v23.75 FIXED...")
+        logger.info("🔗 WEBHOOK_SETUP: Configuring webhook for v23.76 FIXED...")
         
         # Удаляем старый webhook
         bot.remove_webhook()
@@ -5087,7 +5102,7 @@ def setup_webhook():
         return False
 
 def start_webhook_server():
-    """Запуск webhook сервера v23.75"""
+    """Запуск webhook сервера v23.76"""
     try:
         logger.info(f"🚀 WEBHOOK_SERVER: Starting server on port {WEBHOOK_PORT}")
         
@@ -5105,7 +5120,7 @@ def start_webhook_server():
         raise
 
 class WebhookHealthChecker:
-    """Мониторинг здоровья системы v23.75"""
+    """Мониторинг здоровья системы v23.76"""
     
     def __init__(self, db, bot):
         self.db = db
@@ -5203,7 +5218,7 @@ class WebhookHealthChecker:
     def _notify_critical_failure(self, issues):
         """Уведомление о критических проблемах"""
         message = f"""
-🚨 КРИТИЧЕСКАЯ ОШИБКА СИСТЕМЫ v23.75
+🚨 КРИТИЧЕСКАЯ ОШИБКА СИСТЕМЫ v23.76
 
 Проблемные компоненты: {', '.join(issues)}
 Количество ошибок подряд: {self.critical_error_count}
@@ -5220,24 +5235,24 @@ class WebhookHealthChecker:
                 logger.error(f"Failed to notify admin {admin_id}: {e}")
 
 def init_global_variables():
-    """Инициализация глобальных переменных v23.75"""
+    """Инициализация глобальных переменных v23.76"""
     global all_users, health_checker
     all_users = db.get_user_stats()
     health_checker = WebhookHealthChecker(db, bot)
     logger.info(f"✅ GLOBALS: Initialized all_users with {len(all_users)} users")
     logger.info(f"✅ HEALTH_CHECKER: Monitoring system initialized")
 
-# Инициализация систем безопасности v23.75
+# Инициализация систем безопасности v23.76
 rate_limiter = WebhookRateLimiter()
 input_validator = InputValidator()
 security = SecurityValidator()
 
-# === ФУНКЦИИ ИНИЦИАЛИЗАЦИИ v23.75 ===
+# === ФУНКЦИИ ИНИЦИАЛИЗАЦИИ v23.76 ===
 
 def setup_webhook():
-    """Настройка webhook v23.75 с улучшенной обработкой ошибок"""
+    """Настройка webhook v23.76 с улучшенной обработкой ошибок"""
     try:
-        logger.info("🔗 WEBHOOK_SETUP: Configuring webhook for v23.75...")
+        logger.info("🔗 WEBHOOK_SETUP: Configuring webhook for v23.76...")
         
         # Удаляем старый webhook
         bot.remove_webhook()
@@ -5266,7 +5281,7 @@ def setup_webhook():
         return False
 
 def start_webhook_server():
-    """Запуск webhook сервера v23.75 с health checking"""
+    """Запуск webhook сервера v23.76 с health checking"""
     try:
         logger.info(f"🚀 WEBHOOK_SERVER: Starting server on port {WEBHOOK_PORT}")
         
@@ -5284,9 +5299,9 @@ def start_webhook_server():
         raise
 
 def main():
-    """Главная функция приложения v23.75 - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
+    """Главная функция приложения v23.76 - ИСПРАВЛЕННАЯ ВЕРСИЯ"""
     try:
-        logger.info("🚀 STARTING: Presave Reminder Bot v23.75 - PRODUCTION READY")
+        logger.info("🚀 STARTING: Presave Reminder Bot v23.76 - PRODUCTION READY")
         
         # Инициализация базы данных
         db.init_db()
