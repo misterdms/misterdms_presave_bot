@@ -2231,9 +2231,15 @@ def handle_admin_verification_v23_4(message):
 
 # === ОСНОВНОЙ ОБРАБОТЧИК СООБЩЕНИЙ v23.4 ===
 
-@bot.message_handler(func=lambda message: message.chat.id == GROUP_ID and message.message_thread_id == THREAD_ID)
+@bot.message_handler(func=lambda message: (
+    message.chat.id == GROUP_ID and 
+    message.message_thread_id == THREAD_ID and
+    message.text and 
+    not message.text.startswith('/') and  # ИСКЛЮЧАЕМ КОМАНДЫ СРАЗУ В УСЛОВИИ!
+    not message.from_user.is_bot
+))
 def handle_topic_message_v23_4(message):
-    """Обработчик сообщений в топике пресейвов v23.4"""
+    """Обработчик сообщений в топике пресейвов v23.4 - ИСПРАВЛЕН"""
     
     user_id = message.from_user.id
     username = message.from_user.username or f"user_{user_id}"
@@ -2241,16 +2247,6 @@ def handle_topic_message_v23_4(message):
     
     logger.info(f"📨 TOPIC_MESSAGE_V23_4: Message from user {user_id} (@{username})")
     logger.info(f"📝 MESSAGE_CONTENT: '{message_text[:100]}{'...' if len(message_text) > 100 else ''}'")
-    
-    # Пропускаем команды
-    if message.text and message.text.startswith('/'):
-        logger.info("🚫 SKIPPED: Command message")
-        return
-    
-    # Пропускаем ботов
-    if message.from_user.is_bot:
-        logger.info("🚫 SKIPPED: Bot message")
-        return
     
     # Проверяем активность бота
     if not db.is_bot_active():
@@ -2296,9 +2292,6 @@ def handle_topic_message_v23_4(message):
         if success:
             db.update_response_limits()
             db.log_bot_response(user_id, enhanced_response)
-            
-            # Уведомляем админов о новых ссылках (опционально)
-            # admin_notifications.notify_links_posted(user_id, username, len(links))
             
             logger.info(f"🎉 SUCCESS: Enhanced response sent for user {username} ({len(links)} links)")
         else:
@@ -3512,7 +3505,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             return
         
         if self.path == WEBHOOK_PATH:
-            try:
+try:
                 content_length = int(self.headers.get('Content-Length', 0))
                 
                 # Проверка безопасности (не блокирующая для отладки)
@@ -3534,12 +3527,29 @@ class WebhookHandler(BaseHTTPRequestHandler):
                     self.end_headers()
                     return
                 
-                update_data = json.loads(post_data.decode('utf-8'))
-                update = telebot.types.Update.de_json(update_data)
-                
-                if update:
-                    bot.process_new_updates([update])
-                    logger.info(f"✅ WEBHOOK_PROCESSED: Update processed successfully from {client_ip}")
+                # ИСПРАВЛЕНИЕ: Фильтруем неподдерживаемые типы обновлений
+                try:
+                    update_data = json.loads(post_data.decode('utf-8'))
+                    
+                    # Пропускаем stories и другие неподдерживаемые типы
+                    if 'story' in update_data or 'business_connection' in update_data or 'business_message' in update_data:
+                        logger.info(f"🚫 SKIPPED: Unsupported update type from {client_ip}")
+                        self.send_response(200)
+                        self.end_headers()
+                        return
+                    
+                    update = telebot.types.Update.de_json(update_data)
+                    
+                    if update:
+                        bot.process_new_updates([update])
+                        logger.info(f"✅ WEBHOOK_PROCESSED: Update processed successfully from {client_ip}")
+                        
+                except (ValueError, TypeError) as parse_error:
+                    logger.warning(f"⚠️ PARSE_ERROR: Could not parse update from {client_ip}: {parse_error}")
+                    # Отправляем 200 чтобы Telegram не повторял запрос
+                    self.send_response(200)
+                    self.end_headers()
+                    return
                 
                 self.send_response(200)
                 self.end_headers()
