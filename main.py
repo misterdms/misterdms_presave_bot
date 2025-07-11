@@ -2882,16 +2882,12 @@ def handle_start_presave_request_callback(call):
 📝 Отправьте описание вашего релиза и все необходимые ссылки одним сообщением:
 
 **Формат сообщения:**
-```
 Описание релиза и просьба о поддержке
 
 https://open.spotify.com/track/...
 https://music.apple.com/album/...
 https://bandlink.to/...
-```
-
 """
-```
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_request_{user_id}"))
@@ -3594,12 +3590,11 @@ def handle_presave_request_complete_input(message):
         bot.reply_to(message, """❌ Не найдено ссылок на музыкальные платформы.
 
 📝 Отправьте сообщение в формате:
-```
+
 Описание вашего релиза и просьба о поддержке
 
 https://open.spotify.com/track/...
-https://music.apple.com/album/...
-```""")
+https://music.apple.com/album/...""")
         return
     
     if len(external_links) > 10:
