@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.07
+# Do Presave Reminder Bot by Mister DMS v24.08
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -767,20 +767,23 @@ def get_user_role(user_id: int) -> str:
 
 def send_message_to_thread(chat_id, text, message_thread_id=None, **kwargs):
     """Безопасная отправка сообщения в правильный топик"""
-    if message_thread_id is not None:
-        kwargs['message_thread_id'] = message_thread_id
+    # Для целевой группы всегда добавляем thread_id
+    if chat_id == GROUP_ID:
+        # Используем переданный thread_id или THREAD_ID по умолчанию
+        kwargs['message_thread_id'] = message_thread_id if message_thread_id is not None else THREAD_ID
+    # Для других чатов thread_id не нужен
     return bot.send_message(chat_id, text, **kwargs)
 
 def send_document_to_thread(chat_id, document, message_thread_id=None, **kwargs):
     """Безопасная отправка документа в правильный топик"""
-    if message_thread_id is not None:
-        kwargs['message_thread_id'] = message_thread_id
+    if chat_id == GROUP_ID:
+        kwargs['message_thread_id'] = message_thread_id if message_thread_id is not None else THREAD_ID
     return bot.send_document(chat_id, document, **kwargs)
 
 def send_photo_to_thread(chat_id, photo, message_thread_id=None, **kwargs):
     """Безопасная отправка фото в правильный топик"""
-    if message_thread_id is not None:
-        kwargs['message_thread_id'] = message_thread_id
+    if chat_id == GROUP_ID:
+        kwargs['message_thread_id'] = message_thread_id if message_thread_id is not None else THREAD_ID
     return bot.send_photo(chat_id, photo, **kwargs)
 
 
@@ -1174,8 +1177,7 @@ def topic_restricted(func):
             try:
                 # Отправляем ответ в тот же топик где пришло сообщение
                 bot.reply_to(message, 
-                    f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
-                    message_thread_id=current_thread)
+                    f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}")
             except Exception as e:
                 log_user_action(
                     user_id=user_id,
@@ -2126,12 +2128,12 @@ def all_links_command(message):
     # Отправляем как документ
     file_bytes = file_content.encode('utf-8')
     
-    bot.send_document(
+    send_document_to_thread(
         message.chat.id,
         ('community_links.txt', file_bytes),
+        getattr(message, 'message_thread_id', None),
         caption=f"📎 **Экспорт ссылок сообщества**\n\nВсего: {len(all_links)} ссылок",
-        parse_mode='Markdown',
-        message_thread_id=getattr(message, 'message_thread_id', None)
+        parse_mode='Markdown'
     )
     
     log_user_action(user_id, "STATS", f"All links exported: {len(all_links)} items")
@@ -2509,6 +2511,8 @@ def callback_handler(call):
             handle_deactivate_bot_callback(call)
         elif call.data.startswith("change_reminder") and user_role == 'admin':
             handle_change_reminder_callback(call)
+        elif call.data == "cancel_reminder_edit" and user_role == 'admin':
+            handle_cancel_reminder_edit_callback(call)
         elif call.data.startswith("clear_data_menu") and user_role == 'admin':
             handle_clear_data_menu_callback(call)
         elif call.data == "test_keepalive" and user_role == 'admin':
@@ -2930,13 +2934,13 @@ def handle_alllinks_callback(call):
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
     
-    bot.send_document(
+    send_document_to_thread(
         call.message.chat.id,
         ('community_links.txt', file_bytes),
+        getattr(call.message, 'message_thread_id', None),
         caption=f"📎 **Экспорт ссылок сообщества**\n\nВсего: {len(all_links)} ссылок",
         parse_mode='Markdown',
-        reply_markup=keyboard,
-        message_thread_id=getattr(call.message, 'message_thread_id', None)
+        reply_markup=keyboard
     )
     
     log_user_action(user_id, "STATS", f"All links exported: {len(all_links)} items")
@@ -3027,16 +3031,12 @@ def show_claim_for_approval(chat_id: int, claim: dict, current_index: int, total
     keyboard.add(InlineKeyboardButton("⬅️ Вернуться в меню Действия", callback_data="admin_actions"))
     
     # Отправляем заголовок
-    bot.send_message(chat_id, header_text, reply_markup=keyboard, parse_mode='Markdown',
-                    message_thread_id=THREAD_ID)
-    
+    send_message_to_thread(chat_id, header_text, THREAD_ID, reply_markup=keyboard, parse_mode='Markdown')
+
     # Отправляем скриншоты
     for screenshot_id in screenshots:
         try:
-            bot.send_photo(chat_id, screenshot_id, caption=f"Скриншот заявки #{claim_id}",
-                          message_thread_id=THREAD_ID)
-        except Exception as e:
-            log_user_action(0, "ERROR", f"Failed to send screenshot {screenshot_id}: {str(e)}")
+            send_photo_to_thread(chat_id, screenshot_id, THREAD_ID, caption=f"Скриншот заявки #{claim_id}")
 
 # ================================
 # 12. ОБРАБОТЧИКИ СООБЩЕНИЙ
@@ -3152,8 +3152,7 @@ def handle_text_messages(message):
         if not recent_requests:
             response_text += "Пока нет активных просьб о пресейвах"
         
-        bot.reply_to(message, response_text, parse_mode='Markdown', 
-                    message_thread_id=THREAD_ID)
+        bot.reply_to(message, response_text, parse_mode='Markdown')
         
         log_user_action(user_id, "LINK_DETECTED", 
                        f"External links: {len(external_links)}")
@@ -3181,6 +3180,7 @@ def handle_private_messages(message):
             handle_presave_claim_comment_input(message)
         elif session.state == UserState.EDITING_REMINDER:
             # Админское редактирование напоминания
+            log_user_action(user_id, "PROCESS", "Handling reminder edit input")
             handle_reminder_edit_input(message)
         elif session.state == UserState.WAITING_USERNAME_FOR_ANALYTICS:
             # Админская аналитика по username
@@ -3313,7 +3313,25 @@ def handle_reminder_edit_input(message):
         bot.reply_to(message, "❌ Нет прав доступа")
         return
     
+    # Проверяем состояние
+    if user_id not in user_sessions:
+        bot.reply_to(message, "❌ Сессия истекла. Начните заново через /menu → Настройки бота")
+        return
+    
+    session = user_sessions[user_id]
+    if session.state != UserState.EDITING_REMINDER:
+        bot.reply_to(message, "❌ Неожиданное состояние")
+        return
+    
     new_reminder = message.text.strip()
+    
+    if len(new_reminder) < 10:
+        bot.reply_to(message, "❌ Текст напоминания слишком короткий (минимум 10 символов)")
+        return
+    
+    if len(new_reminder) > 1000:
+        bot.reply_to(message, "❌ Текст напоминания слишком длинный (максимум 1000 символов)")
+        return
     
     try:
         # Обновляем напоминание в настройках
@@ -3323,17 +3341,38 @@ def handle_reminder_edit_input(message):
         global REMINDER_TEXT
         REMINDER_TEXT = new_reminder
         
-        # Очищаем состояние
-        if user_id in user_sessions:
-            del user_sessions[user_id]
+        # Получаем данные о месте, откуда началось редактирование
+        original_chat_id = session.data.get('original_chat_id')
         
+        # Очищаем состояние
+        del user_sessions[user_id]
+        
+        # Отправляем подтверждение в текущий чат
         keyboard = InlineKeyboardMarkup()
         keyboard.add(InlineKeyboardButton("⬅️ Вернуться в настройки бота", callback_data="bot_settings"))
         
-        bot.reply_to(message, "✅ **Успешно** - Текст напоминания обновлен", 
-                    reply_markup=keyboard, parse_mode='Markdown')
+        success_text = f"""✅ **Напоминание успешно обновлено!**
+
+**Новый текст:**
+{new_reminder}
+
+Теперь этот текст будет показываться пользователям при отправке ссылок."""
         
-        log_user_action(user_id, "SUCCESS", "Reminder text updated")
+        bot.reply_to(message, success_text, reply_markup=keyboard, parse_mode='Markdown')
+        
+        # Также отправляем уведомление в исходный чат, если это был другой чат
+        if original_chat_id and original_chat_id != message.chat.id:
+            try:
+                send_message_to_thread(
+                    original_chat_id,
+                    "✅ **Текст напоминания обновлен в личных сообщениях**",
+                    THREAD_ID if original_chat_id == GROUP_ID else None,
+                    parse_mode='Markdown'
+                )
+            except Exception:
+                pass  # Игнорируем ошибки отправки в исходный чат
+        
+        log_user_action(user_id, "SUCCESS", f"Reminder text updated: {new_reminder[:50]}...")
         
     except Exception as e:
         keyboard = InlineKeyboardMarkup()
@@ -4042,7 +4081,7 @@ def handle_change_reminder_callback(call):
     # Устанавливаем состояние ожидания нового текста
     user_sessions[admin_id] = UserSession(
         state=UserState.EDITING_REMINDER,
-        data={'type': 'reminder_edit'},
+        data={'type': 'reminder_edit', 'original_chat_id': call.message.chat.id, 'original_message_id': call.message.message_id},
         timestamp=datetime.now()
     )
     
@@ -4053,10 +4092,10 @@ def handle_change_reminder_callback(call):
 **Текущий текст:**
 {current_reminder}
 
-Отправьте новый текст напоминания в личных сообщениях боту."""
+📝 Отправьте новый текст напоминания в этот же чат или в личные сообщения боту."""
     
     keyboard = InlineKeyboardMarkup()
-    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="bot_settings"))
+    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="cancel_reminder_edit"))
     
     bot.edit_message_text(
         text,
@@ -4065,6 +4104,25 @@ def handle_change_reminder_callback(call):
         reply_markup=keyboard,
         parse_mode='Markdown'
     )
+    
+    log_user_action(admin_id, "SUCCESS", "Started reminder edit session")
+
+def handle_cancel_reminder_edit_callback(call):
+    """Отмена редактирования напоминания"""
+    admin_id = call.from_user.id
+    
+    if admin_id not in ADMIN_IDS:
+        bot.answer_callback_query(call.id, "❌ Нет прав доступа")
+        return
+    
+    # Очищаем состояние
+    if admin_id in user_sessions:
+        del user_sessions[admin_id]
+    
+    # Возвращаемся в настройки
+    handle_bot_settings_callback(call)
+    
+    log_user_action(admin_id, "SUCCESS", "Reminder edit cancelled")
 
 def handle_clear_data_menu_callback(call):
     """Меню очистки данных"""
