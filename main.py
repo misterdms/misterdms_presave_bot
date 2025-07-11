@@ -3037,6 +3037,15 @@ def show_claim_for_approval(chat_id: int, claim: dict, current_index: int, total
     for screenshot_id in screenshots:
         try:
             send_photo_to_thread(chat_id, screenshot_id, THREAD_ID, caption=f"Скриншот заявки #{claim_id}")
+        except Exception as e:
+        bot.edit_message_text(
+            "❌ **Системная ошибка**\n\nПопробуйте позже",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        log_user_action(user_id, "ERROR", f"Unexpected error: {str(e)}")
+        centralized_error_logger(error=e, context="Function error")
 
 # ================================
 # 12. ОБРАБОТЧИКИ СООБЩЕНИЙ
