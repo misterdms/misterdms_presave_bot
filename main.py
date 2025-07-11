@@ -2455,7 +2455,6 @@ def callback_handler(call):
             correlation_id=correlation_id
         )
     
-    try:
         # Обработка основных callback'ов
         if call.data == "my_stats":
             handle_my_stats_callback(call)
