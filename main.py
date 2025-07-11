@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.05
+# Do Presave Reminder Bot by Mister DMS v24.06
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -822,6 +822,13 @@ def determine_chat_context(message) -> str:
     chat_id = message.chat.id
     current_thread = getattr(message, 'message_thread_id', None)
     
+    # Логируем для отладки
+    log_user_action(
+        user_id=message.from_user.id,
+        action="PROCESS_CONTEXT_CHECK",
+        details=f"ChatType: {chat_type}, ChatID: {chat_id}, Thread: {current_thread}, ExpectedGroup: {GROUP_ID}, ExpectedThread: {THREAD_ID}"
+    )
+    
     # Личные сообщения
     if chat_type == 'private':
         return "private_chat"
@@ -844,7 +851,7 @@ def get_context_adaptive_response(context: str, base_message: str) -> str:
     if context == "private_chat":
         return base_message + "\n\n💡 В личных сообщениях доступны интерактивные формы через меню."
     elif context == "correct_thread":
-        return base_message + f"\n\n🎯 Работаем в правильном топике: https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}"
+        return base_message + f"\n\n🎯 Работаем в правильном топике:  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}"
     else:
         return base_message
 
@@ -991,7 +998,7 @@ def rate_limit(method_name: str = "send_message"):
 #                 details=f"Thread {message.message_thread_id}, expected {THREAD_ID}",
 #                 correlation_id=correlation_id
 #             )
-#             bot.reply_to(message, f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}")
+#             bot.reply_to(message, f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}")
 #             return
 #         return func(message)
 #     return wrapper
@@ -1148,7 +1155,7 @@ def topic_restricted(func):
             try:
                 # Отправляем ответ в тот же топик где пришло сообщение
                 bot.reply_to(message, 
-                    f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+                    f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
                     message_thread_id=current_thread)
             except Exception as e:
                 log_user_action(
@@ -1744,7 +1751,7 @@ def start_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     """Приветствие и базовая информация о боте"""
@@ -1796,7 +1803,7 @@ def help_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -1858,7 +1865,7 @@ def my_stats_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -1886,7 +1893,7 @@ def presave_stats_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -1932,7 +1939,7 @@ def user_stats_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -1992,7 +1999,7 @@ def top_users_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -2037,7 +2044,7 @@ def recent_links_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -2076,7 +2083,7 @@ def all_links_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -2123,7 +2130,7 @@ def ask_presave_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -2148,7 +2155,7 @@ def claim_presave_command(message):
     elif context == "wrong_thread":
         current_thread = getattr(message, 'message_thread_id', None)
         bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
             message_thread_id=current_thread)
         return
     
@@ -2164,36 +2171,20 @@ def claim_presave_command(message):
 # ================================
 
 @bot.message_handler(commands=['menu'])
+@topic_restricted
 @request_logging
 def menu_command(message):
-    """Главное меню - адаптивное для разных контекстов"""
+    """Главное меню - работает только в правильном топике и ЛС"""
     user_id = message.from_user.id
-    chat_type = message.chat.type
-    chat_id = message.chat.id
-    current_thread = getattr(message, 'message_thread_id', None)
     
-    # Определяем контекст и права доступа
-    context = determine_chat_context(message)
+    # Команда уже прошла проверку топика через декоратор topic_restricted
     
-    # Логируем контекст
+    # Декоратор topic_restricted уже обработал все проверки
     log_user_action(
         user_id=user_id,
         action="COMMAND_MENU",
-        details=f"Context: {context}, Chat: {chat_id}, Thread: {current_thread}"
+        details=f"Chat: {message.chat.id}, Thread: {getattr(message, 'message_thread_id', None)}"
     )
-    
-    # Обработка по контексту
-    if context == "wrong_group":
-        bot.reply_to(message, "❌ Бот не работает в этой группе")
-        return
-    elif context == "wrong_thread":
-        bot.reply_to(message, 
-            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
-            message_thread_id=current_thread)
-        return
-    elif context not in ["private_chat", "correct_thread"]:
-        bot.reply_to(message, "❌ Неподдерживаемый контекст")
-        return
     
     if validate_admin(user_id):
         # АДМИНСКОЕ МЕНЮ из структуры гайда
@@ -2343,7 +2334,7 @@ def thread_check_command(message):
 
 ✅ **Статус:** {'Правильный топик!' if current_thread == THREAD_ID and message.chat.id == GROUP_ID else 'Неправильный топик!'}
 
-🌐 **Правильная ссылка:** https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}
+🌐 **Правильная ссылка:**  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}
 """
     
     bot.reply_to(message, check_text, parse_mode='Markdown')
@@ -2433,6 +2424,17 @@ def callback_handler(call):
     """Центральный обработчик всех callback кнопок"""
     user_id = call.from_user.id
     user_role = get_user_role(user_id)
+    
+    # Проверяем топик для callback'ов из группы
+    if call.message.chat.type != 'private':
+        if call.message.chat.id != GROUP_ID:
+            bot.answer_callback_query(call.id, "❌ Бот не работает в этой группе")
+            return
+        
+        current_thread = getattr(call.message, 'message_thread_id', None)
+        if current_thread != THREAD_ID:
+            bot.answer_callback_query(call.id, f"❌ Перейдите в правильный топик: https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}")
+            return
     
     # Создаем корреляционный ID для callback'а
     correlation_id = f"callback_{int(time.time() * 1000)}_{call.from_user.id}"
@@ -5126,7 +5128,7 @@ def main():
         logger.info("🎵 Clear terminology: Request (просьба) vs Claim (заявка)")
         logger.info(f"🔧 Admin IDs: {ADMIN_IDS}")
         logger.info(f"📊 Target Group: {GROUP_ID}, Target Thread: {THREAD_ID}")
-        logger.info(f"🎯 Bot will work ONLY in: https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID} and private chats")
+        logger.info(f"🎯 Bot will work ONLY in:  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID} and private chats")
         logger.info(f"⚙️ Environment variables: GROUP_ID={os.getenv('GROUP_ID')}, THREAD_ID={os.getenv('THREAD_ID')}")
         
         # Инициализация БД с поддержкой скриншотов
@@ -5325,6 +5327,8 @@ def start_http_server(port: int):
             bot_info = bot.get_me()
             logger.info(f"🤖 Bot info: @{bot_info.username} (ID: {bot_info.id})")
             logger.info(f"🎯 Target group: {GROUP_ID}, thread: {THREAD_ID}")
+            logger.info(f"🔗 Expected thread URL: https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}")
+            logger.info(f"⚠️ Bot will ONLY respond to commands in thread {THREAD_ID} of group {GROUP_ID}")
         except Exception as bot_info_error:
             logger.warning(f"⚠️ Could not get bot info: {bot_info_error}")
         
