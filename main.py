@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.02
+# Do Presave Reminder Bot by Mister DMS v24.04
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -778,6 +778,47 @@ def clean_url(url: str) -> str:
     
     return url
 
+def determine_chat_context(message) -> str:
+    """
+    Определяет контекст чата для адаптивного поведения команд
+    
+    Returns:
+        - "private_chat": Личные сообщения
+        - "correct_thread": Правильный топик в целевой группе  
+        - "wrong_thread": Неправильный топик в целевой группе
+        - "wrong_group": Другая группа
+        - "unsupported": Неподдерживаемый тип чата
+    """
+    chat_type = message.chat.type
+    chat_id = message.chat.id
+    current_thread = getattr(message, 'message_thread_id', None)
+    
+    # Личные сообщения
+    if chat_type == 'private':
+        return "private_chat"
+    
+    # Проверка группы
+    if chat_id == GROUP_ID:
+        # Правильная группа, проверяем топик
+        if current_thread == THREAD_ID:
+            return "correct_thread"
+        else:
+            return "wrong_thread"
+    else:
+        # Неправильная группа
+        return "wrong_group"
+
+def get_context_adaptive_response(context: str, base_message: str) -> str:
+    """
+    Адаптирует ответ бота в зависимости от контекста
+    """
+    if context == "private_chat":
+        return base_message + "\n\n💡 В личных сообщениях доступны интерактивные формы через меню."
+    elif context == "correct_thread":
+        return base_message + f"\n\n🎯 Работаем в правильном топике: https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}"
+    else:
+        return base_message
+
 # ================================
 # 6. ДОПОЛНИТЕЛЬНЫЕ УТИЛИТЫ (продолжение)
 # ================================
@@ -884,43 +925,47 @@ def rate_limit(method_name: str = "send_message"):
         return wrapper
     return decorator
 
-def group_only(func):
-    """Декоратор для функций, работающих только в группе"""
-    @functools.wraps(func)
-    def wrapper(message):
-        correlation_id = get_current_context().get('correlation_id')
-        
-        if message.chat.id != GROUP_ID:
-            if message.chat.type == 'private':
-                log_user_action(
-                    user_id=message.from_user.id,
-                    action="WARNING_WRONG_CHAT",
-                    details=f"Private chat, expected group {GROUP_ID}",
-                    correlation_id=correlation_id
-                )
-                bot.reply_to(message, "Эта команда работает только в группе")
-            return
-        
-        return func(message)
-    return wrapper
-
-def thread_only(func):
-    """Декоратор для функций, работающих только в определенном топике"""
-    @functools.wraps(func)
-    def wrapper(message):
-        correlation_id = get_current_context().get('correlation_id')
-        
-        if message.chat.id == GROUP_ID and message.message_thread_id != THREAD_ID:
-            log_user_action(
-                user_id=message.from_user.id,
-                action="WARNING_WRONG_THREAD",
-                details=f"Thread {message.message_thread_id}, expected {THREAD_ID}",
-                correlation_id=correlation_id
-            )
-            bot.reply_to(message, f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}")
-            return
-        return func(message)
-    return wrapper
+# === УСТАРЕВШИЕ ДЕКОРАТОРЫ ===
+# Теперь используем только topic_restricted для унификации
+# Все проверки топиков теперь через topic_restricted декоратор
+# TODO: стереть, если всё работает корректно
+# def group_only(func):
+#     """Декоратор для функций, работающих только в группе"""
+#     @functools.wraps(func)
+#     def wrapper(message):
+#         correlation_id = get_current_context().get('correlation_id')
+#         
+#         if message.chat.id != GROUP_ID:
+#             if message.chat.type == 'private':
+#                 log_user_action(
+#                     user_id=message.from_user.id,
+#                     action="WARNING_WRONG_CHAT",
+#                     details=f"Private chat, expected group {GROUP_ID}",
+#                     correlation_id=correlation_id
+#                 )
+#                 bot.reply_to(message, "Эта команда работает только в группе")
+#             return
+#         
+#         return func(message)
+#     return wrapper
+#
+# def thread_only(func):
+#     """Декоратор для функций, работающих только в определенном топике"""
+#     @functools.wraps(func)
+#     def wrapper(message):
+#         correlation_id = get_current_context().get('correlation_id')
+#         
+#         if message.chat.id == GROUP_ID and message.message_thread_id != THREAD_ID:
+#             log_user_action(
+#                 user_id=message.from_user.id,
+#                 action="WARNING_WRONG_THREAD",
+#                 details=f"Thread {message.message_thread_id}, expected {THREAD_ID}",
+#                 correlation_id=correlation_id
+#             )
+#             bot.reply_to(message, f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}")
+#             return
+#         return func(message)
+#     return wrapper
 
 def safe_api_call(method_name: str = "send_message"):
     """
@@ -1035,9 +1080,23 @@ def topic_restricted(func):
         
         # В ЛС работаем всегда
         if message.chat.type == 'private':
+            log_user_action(
+                user_id=user_id,
+                action="SUCCESS_PRIVATE_CHAT",
+                details="Private chat allowed",
+                correlation_id=correlation_id
+            )
             return func(message)
         
-        # В группах проверяем ID группы и топик
+        # Детальное логирование для отладки
+        log_user_action(
+            user_id=user_id,
+            action="PROCESS_GROUP_MESSAGE",
+            details=f"Chat: {message.chat.id}, Thread: {message.message_thread_id}, Expected Group: {GROUP_ID}, Expected Thread: {THREAD_ID}",
+            correlation_id=correlation_id
+        )
+        
+        # В группах проверяем ID группы
         if message.chat.id != GROUP_ID:
             log_user_action(
                 user_id=user_id,
@@ -1047,17 +1106,37 @@ def topic_restricted(func):
             )
             return
         
-        if message.message_thread_id != THREAD_ID:
+        # Проверяем топик (с обработкой None)
+        current_thread = getattr(message, 'message_thread_id', None)
+        if current_thread != THREAD_ID:
             log_user_action(
                 user_id=user_id,
                 action="WARNING_WRONG_THREAD",
-                details=f"Thread {message.message_thread_id}, expected {THREAD_ID}",
+                details=f"Thread {current_thread}, expected {THREAD_ID}",
                 correlation_id=correlation_id
             )
-            bot.reply_to(message, 
-                f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
-                message_thread_id=message.message_thread_id)
+            
+            try:
+                # Отправляем ответ в тот же топик где пришло сообщение
+                bot.reply_to(message, 
+                    f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+                    message_thread_id=current_thread)
+            except Exception as e:
+                log_user_action(
+                    user_id=user_id,
+                    action="ERROR",
+                    details=f"Failed to send wrong thread message: {str(e)}",
+                    correlation_id=correlation_id
+                )
             return
+        
+        # Успешная проверка
+        log_user_action(
+            user_id=user_id,
+            action="SUCCESS_CORRECT_THREAD",
+            details=f"Correct thread {THREAD_ID}",
+            correlation_id=correlation_id
+        )
         
         return func(message)
     return wrapper
@@ -1616,9 +1695,29 @@ db_manager = DatabaseManager('bot.db')
 # ================================
 
 @bot.message_handler(commands=['start'])
-@topic_restricted
 @request_logging  
 def start_command(message):
+    """Приветствие адаптивное для разных контекстов"""
+    user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Логируем контекст
+    log_user_action(
+        user_id=user_id,
+        action="COMMAND_START",
+        details=f"Context: {context}"
+    )
+    
+    # Обработка по контексту
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
     """Приветствие и базовая информация о боте"""
     user_id = message.from_user.id
     
@@ -1655,11 +1754,23 @@ def start_command(message):
     log_user_action(user_id, "COMMAND", "Start command executed")
 
 @bot.message_handler(commands=['help'])
-@topic_restricted
 @request_logging
 def help_command(message):
     """Справка по использованию бота"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
+    
     is_admin = validate_admin(user_id)
     
     help_text = """
@@ -1705,11 +1816,22 @@ def help_command(message):
     log_user_action(user_id, "COMMAND", "Help command executed")
 
 @bot.message_handler(commands=['mystat'])
-@topic_restricted
 @request_logging  
 def my_stats_command(message):
     """Личная статистика пользователя с прогресс-барами"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
     
     # Обновляем активность
     db_manager.update_user_activity(user_id)
@@ -1722,11 +1844,22 @@ def my_stats_command(message):
     log_user_action(user_id, "STATS", "Personal stats requested")
 
 @bot.message_handler(commands=['presavestats', 'linkstats'])
-@topic_restricted
 @request_logging
 def presave_stats_command(message):
     """Общий рейтинг и статистика сообщества"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
     
     # Получаем топы по разным категориям
     top_approvals = db_manager.get_leaderboard(5, "approvals")
@@ -1757,11 +1890,22 @@ def presave_stats_command(message):
     log_user_action(user_id, "STATS", "Community stats requested")
 
 @bot.message_handler(commands=['userstat'])
-@topic_restricted
 @request_logging
 def user_stats_command(message):
     """Статистика другого пользователя по @username"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
     
     # Парсим username из команды
     command_parts = message.text.split()
@@ -1806,11 +1950,22 @@ def user_stats_command(message):
         log_user_action(user_id, "ERROR", f"Failed to get user stats: {str(e)}")
 
 @bot.message_handler(commands=['topusers'])
-@topic_restricted
 @request_logging
 def top_users_command(message):
     """Топ-5 самых активных пользователей"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
     
     top_users = db_manager.get_leaderboard(5, "approvals")
     
@@ -1840,11 +1995,22 @@ def top_users_command(message):
     log_user_action(user_id, "STATS", "Top users requested")
 
 @bot.message_handler(commands=['recent'])
-@topic_restricted
 @request_logging
 def recent_links_command(message):
     """10 последних ссылок с авторами"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
     
     recent_links = db_manager.get_recent_links(10)
     
@@ -1868,11 +2034,22 @@ def recent_links_command(message):
     log_user_action(user_id, "STATS", "Recent links requested")
 
 @bot.message_handler(commands=['alllinks'])
-@topic_restricted
 @request_logging
 def all_links_command(message):
     """Все ссылки в файле .txt"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
     
     all_links = db_manager.get_recent_links(50)  # Последние 50
     
@@ -1904,13 +2081,24 @@ def all_links_command(message):
     log_user_action(user_id, "STATS", f"All links exported: {len(all_links)} items")
 
 @bot.message_handler(commands=['askpresave'])
-@topic_restricted
 @request_logging
 def ask_presave_command(message):
     """ПРОСЬБА О ПРЕСЕЙВЕ - публикация объявления"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
     
-    if message.chat.type == 'private':
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
+    
+    if context == "private_chat":
         start_presave_request_flow(message)
     else:
         bot.reply_to(message, "Используйте /menu → ⚙️ Действия → Попросить о пресейве")
@@ -1918,13 +2106,24 @@ def ask_presave_command(message):
     log_user_action(user_id, "COMMAND", "Ask presave command")
 
 @bot.message_handler(commands=['claimpresave'])
-@topic_restricted
 @request_logging  
 def claim_presave_command(message):
     """ЗАЯВКА О СОВЕРШЕННОМ ПРЕСЕЙВЕ - подача скриншотов на аппрув"""
     user_id = message.from_user.id
+    context = determine_chat_context(message)
     
-    if message.chat.type == 'private':
+    # Проверка контекста
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        current_thread = getattr(message, 'message_thread_id', None)
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
+    
+    if context == "private_chat":
         start_presave_claim_flow(message)
     else:
         bot.reply_to(message, "Используйте /menu → ⚙️ Действия → Заявить о совершенном пресейве")
@@ -1936,11 +2135,36 @@ def claim_presave_command(message):
 # ================================
 
 @bot.message_handler(commands=['menu'])
-@topic_restricted
 @request_logging
 def menu_command(message):
-    """Главное меню - точное соответствие структуре из гайда"""
+    """Главное меню - адаптивное для разных контекстов"""
     user_id = message.from_user.id
+    chat_type = message.chat.type
+    chat_id = message.chat.id
+    current_thread = getattr(message, 'message_thread_id', None)
+    
+    # Определяем контекст и права доступа
+    context = determine_chat_context(message)
+    
+    # Логируем контекст
+    log_user_action(
+        user_id=user_id,
+        action="COMMAND_MENU",
+        details=f"Context: {context}, Chat: {chat_id}, Thread: {current_thread}"
+    )
+    
+    # Обработка по контексту
+    if context == "wrong_group":
+        bot.reply_to(message, "❌ Бот не работает в этой группе")
+        return
+    elif context == "wrong_thread":
+        bot.reply_to(message, 
+            f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+            message_thread_id=current_thread)
+        return
+    elif context not in ["private_chat", "correct_thread"]:
+        bot.reply_to(message, "❌ Неподдерживаемый контекст")
+        return
     
     if validate_admin(user_id):
         # АДМИНСКОЕ МЕНЮ из структуры гайда
@@ -2065,6 +2289,37 @@ def check_approvals_command(message):
     show_claim_for_approval(message.chat.id, pending_claims[0], 0, len(pending_claims))
     log_user_action(user_id, "ADMIN_APPROVE", f"Checking {len(pending_claims)} pending claims")
 
+@bot.message_handler(commands=['threadcheck'])
+@topic_restricted
+@request_logging
+def thread_check_command(message):
+    """Тестовая команда для проверки топика"""
+    user_id = message.from_user.id
+    
+    if not validate_admin(user_id):
+        bot.reply_to(message, "❌ Команда только для админов")
+        return
+    
+    current_thread = getattr(message, 'message_thread_id', None)
+    chat_type = message.chat.type
+    
+    check_text = f"""
+🔧 **Проверка топика:**
+
+📊 **Текущий чат:** {message.chat.id}
+🎯 **Ожидаемый чат:** {GROUP_ID}
+📍 **Текущий топик:** {current_thread}
+🎯 **Ожидаемый топик:** {THREAD_ID}
+💬 **Тип чата:** {chat_type}
+
+✅ **Статус:** {'Правильный топик!' if current_thread == THREAD_ID and message.chat.id == GROUP_ID else 'Неправильный топик!'}
+
+🌐 **Правильная ссылка:** https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}
+"""
+    
+    bot.reply_to(message, check_text, parse_mode='Markdown')
+    log_user_action(user_id, "COMMAND", f"Thread check: {current_thread} vs {THREAD_ID}")
+
 @bot.message_handler(commands=['keepalive', 'checksystem', 'botstatus'])
 @admin_required
 @request_logging
@@ -2145,19 +2400,31 @@ def diagnostic_commands(message):
 # ================================
 
 @bot.callback_query_handler(func=lambda call: True)
-@request_logging
 def callback_handler(call):
     """Центральный обработчик всех callback кнопок"""
     user_id = call.from_user.id
     user_role = get_user_role(user_id)
-    correlation_id = get_current_context().get('correlation_id')
     
-    log_user_action(
-        user_id=user_id,
-        action="CALLBACK_RECEIVED",
-        details=f"Data: {call.data}, Role: {user_role}",
-        correlation_id=correlation_id
-    )
+    # Создаем корреляционный ID для callback'а
+    correlation_id = f"callback_{int(time.time() * 1000)}_{call.from_user.id}"
+ 
+    # Устанавливаем контекст запроса вручную
+    old_context = getattr(threading.current_thread(), '_request_context', None)
+    threading.current_thread()._request_context = {
+        'correlation_id': correlation_id,
+        'user_id': call.from_user.id,
+        'client_ip': None,
+        'start_time': time.time()
+    }
+    
+    try:
+        # Логируем начало обработки callback'а
+        log_user_action(
+            user_id=user_id,
+            action="CALLBACK_RECEIVED",
+            details=f"Data: {call.data}, Role: {user_role}",
+            correlation_id=correlation_id
+        )
     
     try:
         # Обработка основных callback'ов
@@ -2191,6 +2458,14 @@ def callback_handler(call):
             handle_change_reminder_callback(call)
         elif call.data.startswith("clear_data_menu") and user_role == 'admin':
             handle_clear_data_menu_callback(call)
+        elif call.data == "test_keepalive" and user_role == 'admin':
+            handle_test_keepalive_callback(call)
+        elif call.data == "test_system" and user_role == 'admin':
+            handle_test_system_callback(call)
+        elif call.data == "bot_status_info" and user_role == 'admin':
+            handle_bot_status_info_callback(call)
+        elif call.data == "performance_metrics" and user_role == 'admin':
+            handle_performance_metrics_callback(call)
         elif call.data.startswith("clear_") and user_role == 'admin':
             handle_clear_specific_data_callback(call)
         elif call.data == "check_approvals" and user_role == 'admin':
@@ -2218,6 +2493,8 @@ def callback_handler(call):
             handle_cancel_claim_callback(call)
         elif call.data.startswith("submit_claim_"):
             handle_submit_claim_callback(call)
+        elif call.data == "add_screenshot":
+            handle_add_screenshot_callback(call)
         
         # Админские функции аппрува
         elif call.data.startswith("approve_claim_") and user_role == 'admin':
@@ -2243,6 +2520,22 @@ def callback_handler(call):
         elif call.data == "alllinks":
             handle_alllinks_callback(call)
         
+        # Дополнительные callback'ы
+        elif call.data == "proceed_to_comment":
+            handle_proceed_to_comment_callback(call)
+        elif call.data == "admin_user_links" and user_role == 'admin':
+            handle_admin_user_links_callback(call)
+        elif call.data == "admin_user_approvals" and user_role == 'admin':
+            handle_admin_user_approvals_callback(call)
+        elif call.data == "admin_user_comparison" and user_role == 'admin':
+            handle_admin_user_comparison_callback(call)
+        elif call.data == "user_links_search":
+            handle_user_links_search_callback(call)
+        elif call.data == "user_approvals_search":
+            handle_user_approvals_search_callback(call)
+        elif call.data == "user_comparison_search":
+            handle_user_comparison_search_callback(call)
+        
         else:
             # Неизвестный callback
             log_user_action(user_id, "CALLBACK_UNKNOWN", f"Unknown: {call.data}")
@@ -2265,6 +2558,9 @@ def callback_handler(call):
             bot.answer_callback_query(call.id, "❌ Системная ошибка")
         except:
             pass
+    finally:
+        # Восстанавливаем предыдущий контекст
+        threading.current_thread()._request_context = old_context
 
 def handle_my_stats_callback(call):
     """Обработка показа личной статистики"""
@@ -2484,7 +2780,33 @@ def handle_back_navigation(call):
     
     if destination == "main":
         # Возврат в главное меню
-        menu_command(call.message)
+        user_id = call.from_user.id
+        
+        if validate_admin(user_id):
+            # АДМИНСКОЕ МЕНЮ
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(InlineKeyboardButton("📊 Моя статистика", callback_data="my_stats"))
+            keyboard.add(InlineKeyboardButton("🏆 Лидерборд", callback_data="leaderboard"))
+            keyboard.add(InlineKeyboardButton("⚙️ Действия", callback_data="admin_actions"))
+            keyboard.add(InlineKeyboardButton("📊 Расширенная аналитика", callback_data="admin_analytics"))
+            keyboard.add(InlineKeyboardButton("🔧 Диагностика", callback_data="diagnostics"))
+            keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
+            
+            bot.edit_message_text("👑 **Админское меню**", 
+                                call.message.chat.id, call.message.message_id,
+                                reply_markup=keyboard, parse_mode='Markdown')
+        else:
+            # ПОЛЬЗОВАТЕЛЬСКОЕ МЕНЮ
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(InlineKeyboardButton("📊 Моя статистика", callback_data="my_stats"))
+            keyboard.add(InlineKeyboardButton("🏆 Лидерборд", callback_data="leaderboard"))
+            keyboard.add(InlineKeyboardButton("⚙️ Действия", callback_data="user_actions"))
+            keyboard.add(InlineKeyboardButton("📊 Аналитика", callback_data="user_analytics"))
+            keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
+            
+            bot.edit_message_text("📱 **Главное меню**", 
+                                call.message.chat.id, call.message.message_id,
+                                reply_markup=keyboard, parse_mode='Markdown')
 
 def handle_recent_callback(call):
     """Показ последних ссылок через callback"""
@@ -2511,6 +2833,59 @@ def handle_recent_callback(call):
         parse_mode='Markdown',
         disable_web_page_preview=True
     )
+
+def handle_alllinks_callback(call):
+    """Экспорт всех ссылок через callback"""
+    user_id = call.from_user.id
+    
+    all_links = db_manager.get_recent_links(50)  # Последние 50
+    
+    if not all_links:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
+        
+        bot.edit_message_text(
+            "📎 **Экспорт ссылок**\n\nНет ссылок для экспорта",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Формируем содержимое файла
+    file_content = "# Все ссылки сообщества\n"
+    file_content += f"# Экспорт от {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+    
+    for i, link_data in enumerate(all_links, 1):
+        username = link_data['username'] or 'Unknown'
+        link_url = link_data['link_url']
+        created_at = link_data['created_at']
+        
+        file_content += f"{i}. @{username} | {created_at} | {link_url}\n"
+    
+    # Отправляем как документ
+    file_bytes = file_content.encode('utf-8')
+    
+    # Удаляем старое сообщение
+    try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+    except:
+        pass
+    
+    # Отправляем файл с кнопкой назад
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
+    
+    bot.send_document(
+        call.message.chat.id,
+        ('community_links.txt', file_bytes),
+        caption=f"📎 **Экспорт ссылок сообщества**\n\nВсего: {len(all_links)} ссылок",
+        parse_mode='Markdown',
+        reply_markup=keyboard
+    )
+    
+    log_user_action(user_id, "STATS", f"All links exported: {len(all_links)} items")
 
 # Функции интерактивных форм
 def start_presave_request_flow(message):
@@ -2612,6 +2987,7 @@ def show_claim_for_approval(chat_id: int, claim: dict, current_index: int, total
 # ================================
 
 @bot.message_handler(content_types=['photo'])
+@topic_restricted
 @request_logging
 def handle_photo_messages(message):
     """Обработка скриншотов для заявок на аппрув"""
@@ -2673,15 +3049,19 @@ def handle_photo_messages(message):
         bot.reply_to(message, "❌ Ошибка обработки скриншота")
 
 @bot.message_handler(content_types=['text'])
-@group_only
-@thread_only  
 @request_logging
 def handle_text_messages(message):
     """
     Основной обработчик текстовых сообщений в группе
+    Работает ТОЛЬКО в правильном топике целевой группы
     Четкое разделение обнаружения ссылок и ответа с напоминанием
     """
     user_id = message.from_user.id
+    context = determine_chat_context(message)
+    
+    # Эта функция работает ТОЛЬКО в правильном топике
+    if context != "correct_thread":
+        return  # Молча игнорируем сообщения в других местах
     
     # Добавляем пользователя в БД
     db_manager.add_user(
@@ -3421,12 +3801,16 @@ def handle_setmode_callback(call):
         update_limit_mode(new_mode, admin_id)
         mode_settings = LIMIT_MODES[new_mode]
         
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Назад к режимам", callback_data="rate_modes_menu"))
+        
         bot.edit_message_text(
             f"✅ **Режим изменен на {new_mode.value}**\n\n"
             f"📊 Лимит: {mode_settings['max_hour']}/час\n"
             f"⏱️ Задержка: {mode_settings['cooldown']}с",
             call.message.chat.id,
             call.message.message_id,
+            reply_markup=keyboard,
             parse_mode='Markdown'
         )
     else:
@@ -3498,24 +3882,6 @@ def handle_help_callback(call):
         parse_mode='Markdown'
     )
 
-def handle_bot_settings_callback(call):
-    """Меню настроек бота для админов"""
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(InlineKeyboardButton("🎛️ Режимы лимитов", callback_data="rate_modes_menu"))
-    keyboard.add(InlineKeyboardButton("✅ Активировать бота", callback_data="activate_bot"))
-    keyboard.add(InlineKeyboardButton("⏸️ Деактивировать бота", callback_data="deactivate_bot"))
-    keyboard.add(InlineKeyboardButton("💬 Изменить текст напоминания", callback_data="change_reminder"))
-    keyboard.add(InlineKeyboardButton("🗑️ Очистить данные", callback_data="clear_data_menu"))
-    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_actions"))
-    
-    bot.edit_message_text(
-        "🎛️ **Настройки бота**",
-        call.message.chat.id,
-        call.message.message_id,
-        reply_markup=keyboard,
-        parse_mode='Markdown'
-    )
-
 def handle_rate_modes_menu_callback(call):
     """Меню режимов лимитов"""
     current_mode = get_current_limit_mode()
@@ -3548,6 +3914,9 @@ def handle_activate_bot_callback(call):
     """Активация бота"""
     admin_id = call.from_user.id
     
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад к настройкам", callback_data="bot_settings"))
+    
     try:
         db_manager.set_bot_active(True)
         bot_status["enabled"] = True
@@ -3556,6 +3925,7 @@ def handle_activate_bot_callback(call):
             "✅ **Бот активирован**\n\nБот теперь отвечает на сообщения с ссылками",
             call.message.chat.id,
             call.message.message_id,
+            reply_markup=keyboard,
             parse_mode='Markdown'
         )
         
@@ -3566,6 +3936,7 @@ def handle_activate_bot_callback(call):
             f"❌ **Ошибка активации:** {str(e)}",
             call.message.chat.id,
             call.message.message_id,
+            reply_markup=keyboard,
             parse_mode='Markdown'
         )
         log_user_action(admin_id, "ERROR", f"Failed to activate bot: {str(e)}")
@@ -3573,6 +3944,9 @@ def handle_activate_bot_callback(call):
 def handle_deactivate_bot_callback(call):
     """Деактивация бота"""
     admin_id = call.from_user.id
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад к настройкам", callback_data="bot_settings"))
     
     try:
         db_manager.set_bot_active(False)
@@ -3582,6 +3956,7 @@ def handle_deactivate_bot_callback(call):
             "⏸️ **Бот деактивирован**\n\nБот больше не отвечает на сообщения с ссылками",
             call.message.chat.id,
             call.message.message_id,
+            reply_markup=keyboard,
             parse_mode='Markdown'
         )
         
@@ -3592,6 +3967,7 @@ def handle_deactivate_bot_callback(call):
             f"❌ **Ошибка деактивации:** {str(e)}",
             call.message.chat.id,
             call.message.message_id,
+            reply_markup=keyboard,
             parse_mode='Markdown'
         )
         log_user_action(admin_id, "ERROR", f"Failed to deactivate bot: {str(e)}")
@@ -3706,13 +4082,143 @@ def handle_recent_links_callback(call):
 def handle_user_analytics_callback(call):
     """Пользовательская аналитика"""
     keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(InlineKeyboardButton("📊 Ссылки по @username", callback_data="user_links_analytics"))
-    keyboard.add(InlineKeyboardButton("✅ Аппрувы по @username", callback_data="user_approvals_analytics"))
-    keyboard.add(InlineKeyboardButton("⚖️ Соотношение по @username", callback_data="user_comparison_analytics"))
+    keyboard.add(InlineKeyboardButton("📊 Ссылки по @username", callback_data="user_links_search"))
+    keyboard.add(InlineKeyboardButton("✅ Аппрувы по @username", callback_data="user_approvals_search"))
+    keyboard.add(InlineKeyboardButton("⚖️ Соотношение по @username", callback_data="user_comparison_search"))
     keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
     
     bot.edit_message_text(
         "📊 **Аналитика пользователей**",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_test_keepalive_callback(call):
+    """Тест keep alive через callback"""
+    render_url = os.getenv('RENDER_EXTERNAL_URL', 'localhost')
+    url = f"https://{render_url}/keepalive"
+    
+    start_time = time.time()
+    success = make_keep_alive_request(url)
+    duration = round((time.time() - start_time) * 1000, 2)
+    
+    status = "✅ OK" if success else "❌ FAILED"
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+    
+    bot.edit_message_text(
+        f"💓 **Keep Alive Test**\n\n{status}\nДлительность: {duration}ms\nURL: {url}",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_test_system_callback(call):
+    """Проверка системы через callback"""
+    # Проверка всех компонентов
+    checks = {}
+    
+    # БД
+    try:
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT COUNT(*) FROM users')
+            user_count = cursor.fetchone()[0]
+        checks['database'] = f"✅ OK ({user_count} пользователей)"
+    except Exception as e:
+        checks['database'] = f"❌ ERROR: {str(e)}"
+    
+    # Telegram API
+    try:
+        bot_info = bot.get_me()
+        checks['telegram_api'] = f"✅ OK (@{bot_info.username})"
+    except Exception as e:
+        checks['telegram_api'] = f"❌ ERROR: {str(e)}"
+    
+    # Скриншоты
+    try:
+        screenshots_count = db_manager.get_active_screenshots_count()
+        checks['screenshots'] = f"✅ OK ({screenshots_count} активных)"
+    except Exception as e:
+        checks['screenshots'] = f"❌ ERROR: {str(e)}"
+    
+    system_text = "🔧 **Проверка системы:**\n\n"
+    for component, status in checks.items():
+        system_text += f"**{component}:** {status}\n"
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+    
+    bot.edit_message_text(
+        system_text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_bot_status_info_callback(call):
+    """Информация о статусе бота через callback"""
+    uptime = datetime.now() - bot_status["start_time"]
+    current_mode = get_current_limit_mode()
+    active = db_manager.is_bot_active()
+    
+    status_text = f"""
+🤖 **Статус бота:**
+
+📊 Активность: {'✅ Активен' if active else '⏸️ Деактивирован'}
+⏱️ Uptime: {str(uptime).split('.')[0]}
+🎛️ Режим лимитов: {current_mode.value}
+📸 Активных скриншотов: {db_manager.get_active_screenshots_count()}
+💾 Сессий пользователей: {len(user_sessions)}
+
+🔗 Webhook: настроен
+💓 Keep alive: активен
+"""
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+    
+    bot.edit_message_text(
+        status_text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_performance_metrics_callback(call):
+    """Метрики производительности через callback"""
+    metrics_summary = metrics.get_summary()
+    
+    metrics_text = "📈 **Метрики производительности:**\n\n"
+    
+    # Счетчики
+    if metrics_summary.get('counters'):
+        metrics_text += "**Счетчики:**\n"
+        for metric, count in metrics_summary['counters'].items():
+            metrics_text += f"• {metric}: {count}\n"
+        metrics_text += "\n"
+    
+    # Времена выполнения
+    if metrics_summary.get('timings'):
+        metrics_text += "**Производительность (мс):**\n"
+        for metric, timing in metrics_summary['timings'].items():
+            avg = timing['avg_ms']
+            metrics_text += f"• {metric}: {avg}ms (avg)\n"
+    
+    if not metrics_summary.get('counters') and not metrics_summary.get('timings'):
+        metrics_text += "Данных пока нет"
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+    
+    bot.edit_message_text(
+        metrics_text,
         call.message.chat.id,
         call.message.message_id,
         reply_markup=keyboard,
@@ -3770,6 +4276,182 @@ def handle_clear_specific_data_callback(call):
             parse_mode='Markdown'
         )
         log_user_action(admin_id, "ERROR", f"Failed to clear {data_type}: {str(e)}")
+
+def handle_admin_analytics_callback(call):
+    """Меню админской аналитики"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton("📊 Ссылки по @username", callback_data="admin_user_links"))
+    keyboard.add(InlineKeyboardButton("✅ Аппрувы по @username", callback_data="admin_user_approvals"))
+    keyboard.add(InlineKeyboardButton("⚖️ Соотношение по @username", callback_data="admin_user_comparison"))
+    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
+    
+    bot.edit_message_text(
+        "📊 **Расширенная аналитика**",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_admin_user_links_callback(call):
+    """Запрос username для просмотра ссылок (админ)"""
+    admin_id = call.from_user.id
+    
+    user_sessions[admin_id] = UserSession(
+        state=UserState.WAITING_USERNAME_FOR_ANALYTICS,
+        data={'analytics_type': 'links'},
+        timestamp=datetime.now()
+    )
+    
+    bot.edit_message_text(
+        "📊 **Аналитика ссылок**\n\nОтправьте username (без @) для анализа:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+
+def handle_admin_user_approvals_callback(call):
+    """Запрос username для просмотра аппрувов (админ)"""
+    admin_id = call.from_user.id
+    
+    user_sessions[admin_id] = UserSession(
+        state=UserState.WAITING_USERNAME_FOR_ANALYTICS,
+        data={'analytics_type': 'approvals'},
+        timestamp=datetime.now()
+    )
+    
+    bot.edit_message_text(
+        "✅ **Аналитика аппрувов**\n\nОтправьте username (без @) для анализа:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+
+def handle_admin_user_comparison_callback(call):
+    """Запрос username для сравнительной аналитики (админ)"""
+    admin_id = call.from_user.id
+    
+    user_sessions[admin_id] = UserSession(
+        state=UserState.WAITING_USERNAME_FOR_ANALYTICS,
+        data={'analytics_type': 'comparison'},
+        timestamp=datetime.now()
+    )
+    
+    bot.edit_message_text(
+        "⚖️ **Сравнительная аналитика**\n\nОтправьте username (без @) для анализа:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+
+def handle_user_links_search_callback(call):
+    """Поиск ссылок по username (пользователь)"""
+    user_id = call.from_user.id
+    
+    user_sessions[user_id] = UserSession(
+        state=UserState.WAITING_USERNAME_FOR_ANALYTICS,
+        data={'analytics_type': 'links'},
+        timestamp=datetime.now()
+    )
+    
+    bot.edit_message_text(
+        "📊 **Поиск ссылок**\n\nОтправьте username (без @) для поиска:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+
+def handle_user_approvals_search_callback(call):
+    """Поиск аппрувов по username (пользователь)"""
+    user_id = call.from_user.id
+    
+    user_sessions[user_id] = UserSession(
+        state=UserState.WAITING_USERNAME_FOR_ANALYTICS,
+        data={'analytics_type': 'approvals'},
+        timestamp=datetime.now()
+    )
+    
+    bot.edit_message_text(
+        "✅ **Поиск аппрувов**\n\nОтправьте username (без @) для поиска:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+
+def handle_user_comparison_search_callback(call):
+    """Поиск сравнительной статистики (пользователь)"""
+    user_id = call.from_user.id
+    
+    user_sessions[user_id] = UserSession(
+        state=UserState.WAITING_USERNAME_FOR_ANALYTICS,
+        data={'analytics_type': 'comparison'},
+        timestamp=datetime.now()
+    )
+    
+    bot.edit_message_text(
+        "⚖️ **Сравнительная статистика**\n\nОтправьте username (без @) для анализа:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+
+def handle_proceed_to_comment_callback(call):
+    """Переход к комментарию в заявке на аппрув"""
+    user_id = call.from_user.id
+    
+    if user_id not in user_sessions or user_sessions[user_id].state != UserState.CLAIMING_PRESAVE_SCREENSHOTS:
+        bot.answer_callback_query(call.id, "❌ Сессия истекла")
+        return
+    
+    # Переводим в состояние ввода комментария
+    user_sessions[user_id].state = UserState.CLAIMING_PRESAVE_COMMENT
+    
+    bot.edit_message_text(
+        "💬 **Шаг 2: Комментарий к заявке**\n\nОтправьте комментарий о совершенном пресейве:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
+
+def handle_next_claim_callback(call):
+    """Переход к следующей заявке на аппрув"""
+    admin_id = call.from_user.id
+    
+    if admin_id not in ADMIN_IDS:
+        bot.answer_callback_query(call.id, "❌ Нет прав доступа")
+        return
+    
+    next_index = int(call.data.split('_')[2])
+    pending_claims = db_manager.get_pending_claims()
+    
+    if next_index < len(pending_claims):
+        show_claim_for_approval(call.message.chat.id, pending_claims[next_index], next_index, len(pending_claims))
+    else:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в меню Действия", callback_data="admin_actions"))
+        
+        bot.edit_message_text(
+            "✅ **Все заявки рассмотрены**",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+
+def handle_add_screenshot_callback(call):
+    """Добавление еще одного скриншота"""
+    user_id = call.from_user.id
+    
+    if user_id not in user_sessions or user_sessions[user_id].state != UserState.CLAIMING_PRESAVE_SCREENSHOTS:
+        bot.answer_callback_query(call.id, "❌ Сессия истекла")
+        return
+    
+    bot.edit_message_text(
+        "📸 **Отправьте еще один скриншот**\n\nВы можете добавить дополнительные доказательства:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
 
 # ================================
 # 13. СИСТЕМА KEEP ALIVE И WEBHOOK
@@ -4388,11 +5070,29 @@ def main():
             logger.error(f"❌ Missing required environment variables: {missing_vars}")
             return
         
+        # Дополнительная валидация критичных переменных
+        try:
+            group_id_test = int(os.getenv("GROUP_ID", "0"))
+            thread_id_test = int(os.getenv("THREAD_ID", "0"))
+            
+            if group_id_test == 0 or thread_id_test == 0:
+                logger.error("❌ GROUP_ID and THREAD_ID must be non-zero")
+                return
+            
+            logger.info(f"✅ Target validation: Group {group_id_test}, Thread {thread_id_test}")
+            logger.info(f"🎯 Target URL: https://t.me/c/{abs(group_id_test)}/{thread_id_test}")
+            
+        except (ValueError, TypeError) as e:
+            logger.error(f"❌ Invalid GROUP_ID or THREAD_ID format: {e}")
+            return
+        
         logger.info("🚀 Starting Do Presave Reminder Bot by Mister DMS v24 - Bug Fixes")
         logger.info("📸 Screenshot support enabled with 7-day TTL")
         logger.info("🎵 Clear terminology: Request (просьба) vs Claim (заявка)")
         logger.info(f"🔧 Admin IDs: {ADMIN_IDS}")
-        logger.info(f"📊 Group ID: {GROUP_ID}, Thread ID: {THREAD_ID}")
+        logger.info(f"📊 Target Group: {GROUP_ID}, Target Thread: {THREAD_ID}")
+        logger.info(f"🎯 Bot will work ONLY in: https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID} and private chats")
+        logger.info(f"⚙️ Environment variables: GROUP_ID={os.getenv('GROUP_ID')}, THREAD_ID={os.getenv('THREAD_ID')}")
         
         # Инициализация БД с поддержкой скриншотов
         db_manager.create_tables()
