@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.17
+# Do Presave Reminder Bot by Mister DMS v24.18
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -521,7 +521,10 @@ def request_context(correlation_id: str = None, user_id: int = None, client_ip: 
 
 def get_current_context():
     """Получение текущего контекста запроса"""
-    return getattr(threading.current_thread(), '_request_context', {})
+    try:
+        return getattr(threading.current_thread(), '_request_context', {})
+    except Exception:
+        return {}
 
 def centralized_error_logger(error: Exception, context: str = "", user_id: int = None, correlation_id: str = None):
     """Централизованное логирование ошибок с контекстом"""
@@ -864,9 +867,12 @@ def determine_chat_context(message) -> str:
     chat_id = message.chat.id
     current_thread = getattr(message, 'message_thread_id', None)
     
+    # Безопасное получение user_id
+    user_id = message.from_user.id if hasattr(message, 'from_user') and message.from_user else 0
+    
     # Логируем для отладки
     log_user_action(
-        user_id=message.from_user.id,
+        user_id=user_id,
         action="PROCESS_CONTEXT_CHECK",
         details=f"ChatType: {chat_type}, ChatID: {chat_id}, Thread: {current_thread}, ExpectedGroup: {GROUP_ID}, ExpectedThread: {THREAD_ID}"
     )
@@ -1115,7 +1121,7 @@ def topic_restricted(func):
     """Декоратор для ограничения работы только в определенном топике и ЛС"""
     @functools.wraps(func)
     def wrapper(message):
-        user_id = message.from_user.id
+        user_id = message.from_user.id if hasattr(message, 'from_user') and message.from_user else 0
         correlation_id = get_current_context().get('correlation_id')
         
         # В ЛС работаем всегда
@@ -1129,10 +1135,11 @@ def topic_restricted(func):
             return func(message)
         
         # Детальное логирование для отладки
+        current_thread = getattr(message, 'message_thread_id', None)
         log_user_action(
             user_id=user_id,
             action="PROCESS_GROUP_MESSAGE",
-            details=f"Chat: {message.chat.id}, Thread: {message.message_thread_id}, Expected Group: {GROUP_ID}, Expected Thread: {THREAD_ID}",
+            details=f"Chat: {message.chat.id}, Thread: {current_thread}, Expected Group: {GROUP_ID}, Expected Thread: {THREAD_ID}",
             correlation_id=correlation_id
         )
         
@@ -1144,10 +1151,13 @@ def topic_restricted(func):
                 details=f"Chat {message.chat.id}, expected {GROUP_ID}",
                 correlation_id=correlation_id
             )
+            try:
+                bot.reply_to(message, "❌ Бот не работает в этой группе")
+            except:
+                pass
             return
         
-        # Проверяем топик (с обработкой None)
-        current_thread = getattr(message, 'message_thread_id', None)
+        # Проверяем топик - КРИТИЧЕСКОЕ ИСПРАВЛЕНИЕ!
         if current_thread != THREAD_ID:
             log_user_action(
                 user_id=user_id,
@@ -1158,8 +1168,11 @@ def topic_restricted(func):
             
             try:
                 # Отправляем ответ в тот же топик где пришло сообщение
-                bot.reply_to(message, 
-                    f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}")
+                bot.send_message(
+                    message.chat.id,
+                    f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}",
+                    message_thread_id=current_thread
+                )
             except Exception as e:
                 log_user_action(
                     user_id=user_id,
@@ -2180,6 +2193,13 @@ def claim_presave_command(message):
 def menu_command(message):
     """Главное меню - работает только в правильном топике и ЛС"""
     user_id = message.from_user.id
+    
+    # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+    log_user_action(
+        user_id=user_id,
+        action="COMMAND_MENU_START",
+        details=f"Menu command started, Chat: {message.chat.id}, Type: {message.chat.type}"
+    )
     
     # ПРИНУДИТЕЛЬНАЯ ОЧИСТКА ВСЕХ СЕССИЙ при вызове /menu
     if user_id in user_sessions:
