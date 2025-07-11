@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.06
+# Do Presave Reminder Bot by Mister DMS v24.07
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -764,6 +764,25 @@ security = WebhookSecurity()
 def get_user_role(user_id: int) -> str:
     """Определение роли пользователя"""
     return 'admin' if user_id in ADMIN_IDS else 'user'
+
+def send_message_to_thread(chat_id, text, message_thread_id=None, **kwargs):
+    """Безопасная отправка сообщения в правильный топик"""
+    if message_thread_id is not None:
+        kwargs['message_thread_id'] = message_thread_id
+    return bot.send_message(chat_id, text, **kwargs)
+
+def send_document_to_thread(chat_id, document, message_thread_id=None, **kwargs):
+    """Безопасная отправка документа в правильный топик"""
+    if message_thread_id is not None:
+        kwargs['message_thread_id'] = message_thread_id
+    return bot.send_document(chat_id, document, **kwargs)
+
+def send_photo_to_thread(chat_id, photo, message_thread_id=None, **kwargs):
+    """Безопасная отправка фото в правильный топик"""
+    if message_thread_id is not None:
+        kwargs['message_thread_id'] = message_thread_id
+    return bot.send_photo(chat_id, photo, **kwargs)
+
 
 def safe_string(text: str, max_length: int = 100) -> str:
     """Безопасная обработка строк с Unicode"""
@@ -2111,7 +2130,8 @@ def all_links_command(message):
         message.chat.id,
         ('community_links.txt', file_bytes),
         caption=f"📎 **Экспорт ссылок сообщества**\n\nВсего: {len(all_links)} ссылок",
-        parse_mode='Markdown'
+        parse_mode='Markdown',
+        message_thread_id=getattr(message, 'message_thread_id', None)
     )
     
     log_user_action(user_id, "STATS", f"All links exported: {len(all_links)} items")
@@ -2180,10 +2200,11 @@ def menu_command(message):
     # Команда уже прошла проверку топика через декоратор topic_restricted
     
     # Декоратор topic_restricted уже обработал все проверки
+    current_thread = getattr(message, 'message_thread_id', None)
     log_user_action(
         user_id=user_id,
         action="COMMAND_MENU",
-        details=f"Chat: {message.chat.id}, Thread: {getattr(message, 'message_thread_id', None)}"
+        details=f"Chat: {message.chat.id}, Thread: {current_thread}, ExpectedThread: {THREAD_ID}, SendingToThread: {current_thread}"
     )
     
     if validate_admin(user_id):
@@ -2197,7 +2218,8 @@ def menu_command(message):
         keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
         
         bot.send_message(message.chat.id, "👑 **Админское меню**", 
-                        reply_markup=keyboard, parse_mode='Markdown')
+                        reply_markup=keyboard, parse_mode='Markdown',
+                        message_thread_id=getattr(message, 'message_thread_id', None))
     else:
         # ПОЛЬЗОВАТЕЛЬСКОЕ МЕНЮ из структуры гайда  
         keyboard = InlineKeyboardMarkup(row_width=1)
@@ -2208,7 +2230,8 @@ def menu_command(message):
         keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
         
         bot.send_message(message.chat.id, "📱 **Главное меню**", 
-                        reply_markup=keyboard, parse_mode='Markdown')
+                        reply_markup=keyboard, parse_mode='Markdown',
+                        message_thread_id=getattr(message, 'message_thread_id', None))
     
     log_user_action(user_id, "COMMAND", "Menu opened")
 
@@ -2912,7 +2935,8 @@ def handle_alllinks_callback(call):
         ('community_links.txt', file_bytes),
         caption=f"📎 **Экспорт ссылок сообщества**\n\nВсего: {len(all_links)} ссылок",
         parse_mode='Markdown',
-        reply_markup=keyboard
+        reply_markup=keyboard,
+        message_thread_id=getattr(call.message, 'message_thread_id', None)
     )
     
     log_user_action(user_id, "STATS", f"All links exported: {len(all_links)} items")
@@ -3003,12 +3027,14 @@ def show_claim_for_approval(chat_id: int, claim: dict, current_index: int, total
     keyboard.add(InlineKeyboardButton("⬅️ Вернуться в меню Действия", callback_data="admin_actions"))
     
     # Отправляем заголовок
-    bot.send_message(chat_id, header_text, reply_markup=keyboard, parse_mode='Markdown')
+    bot.send_message(chat_id, header_text, reply_markup=keyboard, parse_mode='Markdown',
+                    message_thread_id=THREAD_ID)
     
     # Отправляем скриншоты
     for screenshot_id in screenshots:
         try:
-            bot.send_photo(chat_id, screenshot_id, caption=f"Скриншот заявки #{claim_id}")
+            bot.send_photo(chat_id, screenshot_id, caption=f"Скриншот заявки #{claim_id}",
+                          message_thread_id=THREAD_ID)
         except Exception as e:
             log_user_action(0, "ERROR", f"Failed to send screenshot {screenshot_id}: {str(e)}")
 
