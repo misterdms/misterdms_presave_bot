@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.04
+# Do Presave Reminder Bot by Mister DMS v24.05
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -3642,7 +3642,11 @@ def handle_cancel_claim_callback(call):
 
 def handle_submit_claim_callback(call):
     """Подача заявки на аппрув"""
-    callback_user_id = int(call.data.split('_')[2])
+    try:
+        callback_user_id = int(call.data.split('_')[2])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
     
     # Проверка безопасности
     if call.from_user.id != callback_user_id:
@@ -3662,7 +3666,6 @@ def handle_submit_claim_callback(call):
         
         if is_trusted:
             # Автоматический аппрув для доверенных пользователей
-            status = "approved"
             claim_id = db_manager.add_approval_claim(
                 user_id=callback_user_id,
                 screenshots=session.screenshots,
