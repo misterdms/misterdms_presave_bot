@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.12
+# Do Presave Reminder Bot by Mister DMS v24.13
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -5904,15 +5904,15 @@ def main():
             logger.error("❌ Webhook URL too long (max 2048 characters)")
             return
 
-        # Проверка доступности URL (опционально)
-        try:
-            import urllib.request
-            test_url = f"https://{clean_url(render_url)}/health"
-            urllib.request.urlopen(test_url, timeout=5)
-            logger.info(f"✅ Service URL is accessible: {test_url}")
-        except Exception as url_check_error:
-            logger.warning(f"⚠️ Could not verify URL accessibility: {url_check_error}")
-            logger.warning("🔄 Proceeding with webhook setup anyway...")
+#        # Проверка доступности URL (опционально) - излишняя. Не надо проверять самого себя до запуска, это бред. Вызывает ошибку.
+#        try:
+#            import urllib.request
+#            test_url = f"https://{clean_url(render_url)}/health"
+#            urllib.request.urlopen(test_url, timeout=5)
+#            logger.info(f"✅ Service URL is accessible: {test_url}")
+#        except Exception as url_check_error:
+#            logger.warning(f"⚠️ Could not verify URL accessibility: {url_check_error}")
+#            logger.warning("🔄 Proceeding with webhook setup anyway...")
         
         try:
             logger.info(f"🔧 Setting up webhook: {webhook_url}")
