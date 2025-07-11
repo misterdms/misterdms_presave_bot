@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24
+# Do Presave Reminder Bot by Mister DMS v24.01
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -150,6 +150,18 @@ logger = logging.getLogger(__name__)
 
 # Создание экземпляра бота
 bot = telebot.TeleBot(BOT_TOKEN)
+# Исправление DeprecationWarning для SQLite datetime в Python 3.12+
+import sqlite3
+from datetime import datetime
+
+def adapt_datetime(dt):
+    return dt.isoformat()
+
+def convert_datetime(s):
+    return datetime.fromisoformat(s.decode())
+
+sqlite3.register_adapter(datetime, adapt_datetime)
+sqlite3.register_converter("datetime", convert_datetime)
 
 # ================================
 # 4. КОНСТАНТЫ И КОНФИГУРАЦИЯ ЛИМИТОВ
@@ -2119,6 +2131,31 @@ def callback_handler(call):
         elif call.data == "help":
             handle_help_callback(call)
         
+        # Настройки бота (админы)
+        elif call.data == "bot_settings" and user_role == 'admin':
+            handle_bot_settings_callback(call)
+        elif call.data == "rate_modes_menu" and user_role == 'admin':
+            handle_rate_modes_menu_callback(call)
+        elif call.data.startswith("activate_bot") and user_role == 'admin':
+            handle_activate_bot_callback(call)
+        elif call.data.startswith("deactivate_bot") and user_role == 'admin':
+            handle_deactivate_bot_callback(call)
+        elif call.data.startswith("change_reminder") and user_role == 'admin':
+            handle_change_reminder_callback(call)
+        elif call.data.startswith("clear_data_menu") and user_role == 'admin':
+            handle_clear_data_menu_callback(call)
+        elif call.data.startswith("clear_") and user_role == 'admin':
+            handle_clear_specific_data_callback(call)
+        elif call.data == "check_approvals" and user_role == 'admin':
+            handle_check_approvals_callback(call)
+        elif call.data.startswith("recent_links_") and user_role == 'admin':
+            handle_recent_links_callback(call)
+        
+        # Пользовательские функции  
+        elif call.data == "user_analytics":
+            handle_user_analytics_callback(call)
+        elif call.data.startswith("recent_links_") and user_role == 'user':
+            handle_recent_links_callback(call)
         # Интерактивные просьбы о пресейвах
         elif call.data == "start_presave_request":
             handle_start_presave_request_callback(call)
@@ -3413,6 +3450,279 @@ def handle_help_callback(call):
         reply_markup=keyboard,
         parse_mode='Markdown'
     )
+
+def handle_bot_settings_callback(call):
+    """Меню настроек бота для админов"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton("🎛️ Режимы лимитов", callback_data="rate_modes_menu"))
+    keyboard.add(InlineKeyboardButton("✅ Активировать бота", callback_data="activate_bot"))
+    keyboard.add(InlineKeyboardButton("⏸️ Деактивировать бота", callback_data="deactivate_bot"))
+    keyboard.add(InlineKeyboardButton("💬 Изменить текст напоминания", callback_data="change_reminder"))
+    keyboard.add(InlineKeyboardButton("🗑️ Очистить данные", callback_data="clear_data_menu"))
+    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_actions"))
+    
+    bot.edit_message_text(
+        "🎛️ **Настройки бота**",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_rate_modes_menu_callback(call):
+    """Меню режимов лимитов"""
+    current_mode = get_current_limit_mode()
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton(f"🟢 Conservative{' (активен)' if current_mode == LimitMode.CONSERVATIVE else ''}", callback_data="setmode_conservative"))
+    keyboard.add(InlineKeyboardButton(f"🟡 Normal{' (активен)' if current_mode == LimitMode.NORMAL else ''}", callback_data="setmode_normal"))
+    keyboard.add(InlineKeyboardButton(f"🟠 Burst{' (активен)' if current_mode == LimitMode.BURST else ''}", callback_data="setmode_burst"))
+    keyboard.add(InlineKeyboardButton(f"🔴 Admin Burst{' (активен)' if current_mode == LimitMode.ADMIN_BURST else ''}", callback_data="setmode_adminburst"))
+    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="bot_settings"))
+    
+    mode_info = LIMIT_MODES[current_mode]
+    text = f"""🎛️ **Режимы лимитов**
+
+**Текущий режим:** {current_mode.value}
+📊 Лимит: {mode_info['max_hour']}/час
+⏱️ Задержка: {mode_info['cooldown']}с
+
+Выберите новый режим:"""
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_activate_bot_callback(call):
+    """Активация бота"""
+    admin_id = call.from_user.id
+    
+    try:
+        db_manager.set_bot_active(True)
+        bot_status["enabled"] = True
+        
+        bot.edit_message_text(
+            "✅ **Бот активирован**\n\nБот теперь отвечает на сообщения с ссылками",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        
+        log_user_action(admin_id, "SUCCESS", "Bot activated")
+        
+    except Exception as e:
+        bot.edit_message_text(
+            f"❌ **Ошибка активации:** {str(e)}",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        log_user_action(admin_id, "ERROR", f"Failed to activate bot: {str(e)}")
+
+def handle_deactivate_bot_callback(call):
+    """Деактивация бота"""
+    admin_id = call.from_user.id
+    
+    try:
+        db_manager.set_bot_active(False)
+        bot_status["enabled"] = False
+        
+        bot.edit_message_text(
+            "⏸️ **Бот деактивирован**\n\nБот больше не отвечает на сообщения с ссылками",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        
+        log_user_action(admin_id, "SUCCESS", "Bot deactivated")
+        
+    except Exception as e:
+        bot.edit_message_text(
+            f"❌ **Ошибка деактивации:** {str(e)}",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode='Markdown'
+        )
+        log_user_action(admin_id, "ERROR", f"Failed to deactivate bot: {str(e)}")
+
+def handle_change_reminder_callback(call):
+    """Начало изменения текста напоминания"""
+    admin_id = call.from_user.id
+    
+    # Устанавливаем состояние ожидания нового текста
+    user_sessions[admin_id] = UserSession(
+        state=UserState.EDITING_REMINDER,
+        data={'type': 'reminder_edit'},
+        timestamp=datetime.now()
+    )
+    
+    current_reminder = db_manager.get_setting('reminder_text', REMINDER_TEXT)
+    
+    text = f"""💬 **Изменение текста напоминания**
+
+**Текущий текст:**
+{current_reminder}
+
+Отправьте новый текст напоминания в личных сообщениях боту."""
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data="bot_settings"))
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_clear_data_menu_callback(call):
+    """Меню очистки данных"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton("🗑️ Очистить ссылки", callback_data="clear_links"))
+    keyboard.add(InlineKeyboardButton("🗑️ Очистить заявки на аппрувы", callback_data="clear_approvals"))
+    keyboard.add(InlineKeyboardButton("🗑️ Очистить просьбы о пресейвах", callback_data="clear_asks"))
+    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="bot_settings"))
+    
+    bot.edit_message_text(
+        "🗑️ **Очистка данных**\n\nВыберите что очистить:",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_check_approvals_callback(call):
+    """Переход к проверке заявок на аппрув"""
+    admin_id = call.from_user.id
+    
+    pending_claims = db_manager.get_pending_claims()
+    
+    if not pending_claims:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в меню Действия", 
+                                        callback_data="admin_actions"))
+        bot.edit_message_text(
+            "✅ **Заявок на рассмотрение нет**",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        return
+    
+    # Показываем первую заявку для рассмотрения
+    show_claim_for_approval(call.message.chat.id, pending_claims[0], 0, len(pending_claims))
+    log_user_action(admin_id, "ADMIN_APPROVE", f"Checking {len(pending_claims)} pending claims")
+
+def handle_recent_links_callback(call):
+    """Показ последних ссылок"""
+    # Извлекаем количество из callback_data
+    if "recent_links_30" in call.data:
+        limit = 30
+    elif "recent_links_10" in call.data:
+        limit = 10
+    else:
+        limit = 10
+    
+    recent_links = db_manager.get_recent_links(limit)
+    
+    if not recent_links:
+        text = f"📎 **Последние {limit} ссылок**\n\nПока нет ссылок в сообществе"
+    else:
+        text = f"📎 **Последние {limit} ссылок:**\n\n"
+        for i, link_data in enumerate(recent_links, 1):
+            username = link_data['username'] or 'Unknown'
+            message_id = link_data['message_id']
+            message_link = f"https://t.me/c/{abs(GROUP_ID)}/{message_id}"
+            text += f"{i}. @{username} - [перейти к посту]({message_link})\n"
+    
+    keyboard = InlineKeyboardMarkup()
+    if call.from_user.id in ADMIN_IDS:
+        keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="admin_actions"))
+    else:
+        keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="user_actions"))
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown',
+        disable_web_page_preview=True
+    )
+
+def handle_user_analytics_callback(call):
+    """Пользовательская аналитика"""
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton("📊 Ссылки по @username", callback_data="user_links_analytics"))
+    keyboard.add(InlineKeyboardButton("✅ Аппрувы по @username", callback_data="user_approvals_analytics"))
+    keyboard.add(InlineKeyboardButton("⚖️ Соотношение по @username", callback_data="user_comparison_analytics"))
+    keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
+    
+    bot.edit_message_text(
+        "📊 **Аналитика пользователей**",
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+
+def handle_clear_specific_data_callback(call):
+    """Очистка конкретных данных"""
+    admin_id = call.from_user.id
+    data_type = call.data.split('_')[1]  # links, approvals, asks
+    
+    try:
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            
+            if data_type == 'links':
+                cursor.execute('DELETE FROM user_links')
+                cleared = cursor.rowcount
+                message = f"✅ **Очищено {cleared} ссылок**"
+                
+            elif data_type == 'approvals':
+                cursor.execute('DELETE FROM approval_claims WHERE status = "pending"')
+                cleared = cursor.rowcount
+                message = f"✅ **Очищено {cleared} заявок на аппрув**"
+                
+            elif data_type == 'asks':
+                cursor.execute('DELETE FROM presave_requests')
+                cleared = cursor.rowcount
+                message = f"✅ **Очищено {cleared} просьб о пресейвах**"
+            else:
+                message = "❌ **Неизвестный тип данных**"
+        
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="clear_data_menu"))
+        
+        bot.edit_message_text(
+            message,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        
+        log_user_action(admin_id, "SUCCESS", f"Cleared {data_type}: {cleared} items")
+        
+    except Exception as e:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="clear_data_menu"))
+        
+        bot.edit_message_text(
+            f"❌ **Ошибка очистки:** {str(e)}",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        log_user_action(admin_id, "ERROR", f"Failed to clear {data_type}: {str(e)}")
 
 # ================================
 # 13. СИСТЕМА KEEP ALIVE И WEBHOOK
