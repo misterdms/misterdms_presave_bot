@@ -3338,80 +3338,80 @@ def handle_text_messages(message):
     links = extract_links_from_text(text)
     external_links = [link for link in links if is_external_link(link)]
     
-if external_links:
-    # Сохраняем ссылки в БД в любом случае
-    for link in external_links:
-        db_manager.add_user_link(user_id, link, message.message_id)
-    
-    # Определяем есть ли текст кроме ссылок
-    text_without_links = text
-    for link in external_links:
-        text_without_links = text_without_links.replace(link, "").strip()
-    
-    text_without_links = ' '.join(text_without_links.split())
-    
-    # Если есть описательный текст (более 5 символов) - это просьба о пресейве
-    if len(text_without_links) > 5:
-        username = safe_username(message.from_user)
-        
-        # Формируем сообщение от имени бота
-        bot_post_text = f"{safe_string(text_without_links, 500)}\n\n"
-        
-        # Добавляем ссылки
+    if external_links:
+        # Сохраняем ссылки в БД в любом случае
         for link in external_links:
-            bot_post_text += f"{link}\n"
+            db_manager.add_user_link(user_id, link, message.message_id)
         
-        # Добавляем автора в конце
-        bot_post_text += f"\n@{username}"
+        # Определяем есть ли текст кроме ссылок
+        text_without_links = text
+        for link in external_links:
+            text_without_links = text_without_links.replace(link, "").strip()
         
-        try:
-            # Публикуем от имени бота в том же топике
-            published_message = send_message_to_thread(
-                GROUP_ID,
-                bot_post_text,
-                THREAD_ID,
-                parse_mode='Markdown',
-                disable_web_page_preview=True
-            )
+        text_without_links = ' '.join(text_without_links.split())
+        
+        # Если есть описательный текст (более 5 символов) - это просьба о пресейве
+        if len(text_without_links) > 5:
+            username = safe_username(message.from_user)
             
-            # Сохраняем в БД как просьбу о пресейве
-            db_manager.add_presave_request(
-                user_id=user_id,
-                links=external_links,
-                comment=text_without_links,
-                message_id=published_message.message_id
-            )
+            # Формируем сообщение от имени бота
+            bot_post_text = f"{safe_string(text_without_links, 500)}\n\n"
             
-            # Удаляем оригинальное сообщение пользователя
+            # Добавляем ссылки
+            for link in external_links:
+                bot_post_text += f"{link}\n"
+            
+            # Добавляем автора в конце
+            bot_post_text += f"\n@{username}"
+            
             try:
-                bot.delete_message(message.chat.id, message.message_id)
-            except Exception as delete_error:
-                log_user_action(user_id, "WARNING", f"Could not delete original message: {str(delete_error)}")
-            
-            log_user_action(user_id, "REQUEST_PRESAVE", f"Auto-processed from direct message with {len(external_links)} links")
-            
-        except Exception as publish_error:
-            log_user_action(user_id, "ERROR", f"Failed to publish presave request: {str(publish_error)}")
-    
-    # В ЛЮБОМ СЛУЧАЕ отправляем напоминание о необходимости делать пресейвы
-    # Получаем последние 10 просьб о пресейвах для показа
-    recent_requests = db_manager.get_recent_presave_requests(10)
-    
-    # Формируем ответ с напоминанием
-    response_text = REMINDER_TEXT + "\n\n"
-    response_text += "🎵 **Последние просьбы о пресейвах:**\n"
-    
-    for i, request in enumerate(recent_requests, 1):
-        username = request.get('username', 'Неизвестно')
-        message_link = f"https://t.me/c/{abs(GROUP_ID)}/{request['message_id']}"
-        response_text += f"{i}. @{username} - [перейти к посту]({message_link})\n"
-    
-    if not recent_requests:
-        response_text += "Пока нет активных просьб о пресейвах"
-    
-    bot.reply_to(message, response_text, parse_mode='Markdown')
-    
-    log_user_action(user_id, "LINK_DETECTED", f"External links: {len(external_links)}")
+                # Публикуем от имени бота в том же топике
+                published_message = send_message_to_thread(
+                    GROUP_ID,
+                    bot_post_text,
+                    THREAD_ID,
+                    parse_mode='Markdown',
+                    disable_web_page_preview=True
+                )
+                
+                # Сохраняем в БД как просьбу о пресейве
+                db_manager.add_presave_request(
+                    user_id=user_id,
+                    links=external_links,
+                    comment=text_without_links,
+                    message_id=published_message.message_id
+                )
+                
+                # Удаляем оригинальное сообщение пользователя
+                try:
+                    bot.delete_message(message.chat.id, message.message_id)
+                except Exception as delete_error:
+                    log_user_action(user_id, "WARNING", f"Could not delete original message: {str(delete_error)}")
+                
+                log_user_action(user_id, "REQUEST_PRESAVE", f"Auto-processed from direct message with {len(external_links)} links")
+                
+            except Exception as publish_error:
+                log_user_action(user_id, "ERROR", f"Failed to publish presave request: {str(publish_error)}")
+        
+        # В ЛЮБОМ СЛУЧАЕ отправляем напоминание о необходимости делать пресейвы
+        # Получаем последние 10 просьб о пресейвах для показа
+        recent_requests = db_manager.get_recent_presave_requests(10)
+        
+        # Формируем ответ с напоминанием
+        response_text = REMINDER_TEXT + "\n\n"
+        response_text += "🎵 **Последние просьбы о пресейвах:**\n"
+        
+        for i, request in enumerate(recent_requests, 1):
+            username = request.get('username', 'Неизвестно')
+            message_link = f"https://t.me/c/{abs(GROUP_ID)}/{request['message_id']}"
+            response_text += f"{i}. @{username} - [перейти к посту]({message_link})\n"
+        
+        if not recent_requests:
+            response_text += "Пока нет активных просьб о пресейвах"
+        
+        bot.reply_to(message, response_text, parse_mode='Markdown')
+        
+        log_user_action(user_id, "LINK_DETECTED", f"External links: {len(external_links)}")
 
 @bot.message_handler(content_types=['text'], func=lambda m: m.chat.type == 'private')
 @request_logging
