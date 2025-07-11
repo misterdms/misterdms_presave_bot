@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.11
+# Do Presave Reminder Bot by Mister DMS v24.12
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -906,8 +906,12 @@ def cleanup_expired_sessions():
     expired_users = []
     
     # Основные сессии
-    for user_id, session in user_sessions.items():
-        if session.is_expired():
+    for user_id, session in list(user_sessions.items()):  # Создаем копию для безопасной итерации
+        try:
+            if session.is_expired():
+                expired_users.append(user_id)
+        except (AttributeError, TypeError):
+            # Сессия повреждена, удаляем её
             expired_users.append(user_id)
     
     for user_id in expired_users:
@@ -2426,8 +2430,21 @@ def callback_handler(call):
     """Центральный обработчик всех callback кнопок"""
     user_id = call.from_user.id
     current_time = time.time()
+    
     # Проверяем возраст callback'а (Telegram timeout ~30 секунд)
-    callback_age = current_time - call.message.date
+    try:
+        callback_age = current_time - call.message.date
+    except (AttributeError, TypeError):
+        callback_age = 0  # Если не можем определить возраст, продолжаем
+        
+    if callback_age > 25:  # 25 секунд - запас безопасности
+        try:
+            bot.answer_callback_query(call.id, "⏰ Кнопка устарела. Используйте /menu для обновления")
+        except:
+            pass  # Игнорируем ошибки timeout
+        
+        log_user_action(user_id, "WARNING", f"Old callback ignored: {callback_age}s old")
+        return
     if callback_age > 25:  # 25 секунд - запас безопасности
         try:
             bot.answer_callback_query(call.id, "⏰ Кнопка устарела. Используйте /menu для обновления")
@@ -2627,6 +2644,24 @@ def callback_handler(call):
     finally:
         # Восстанавливаем предыдущий контекст
         threading.current_thread()._request_context = old_context
+
+def handle_proceed_to_comment_callback(call):
+    """Переход к комментарию в заявке на аппрув"""
+    user_id = call.from_user.id
+    
+    if user_id not in user_sessions or user_sessions[user_id].state != UserState.CLAIMING_PRESAVE_SCREENSHOTS:
+        bot.answer_callback_query(call.id, "❌ Сессия истекла")
+        return
+    
+    # Переводим в состояние ввода комментария
+    user_sessions[user_id].state = UserState.CLAIMING_PRESAVE_COMMENT
+    
+    bot.edit_message_text(
+        "💬 **Шаг 2: Комментарий к заявке**\n\nОтправьте комментарий о совершенном пресейве:",
+        call.message.chat.id,
+        call.message.message_id,
+        parse_mode='Markdown'
+    )
 
 def handle_reload_modes_callback(call):
     """Перезагрузка режимов лимитов"""
@@ -2906,7 +2941,11 @@ def handle_start_presave_claim_callback(call):
 
 def handle_back_navigation(call):
     """Обработка кнопок назад"""
-    destination = call.data.split('_')[1]  # main, leaderboard, etc.
+    try:
+        destination = call.data.split('_')[1]  # main, leaderboard, etc.
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id, "❌ Ошибка навигации")
+        return
     
     if destination == "main":
         # Возврат в главное меню
@@ -3110,7 +3149,11 @@ def show_claim_for_approval(chat_id: int, claim: dict, current_index: int, total
     screenshot_errors = 0
     for i, screenshot_id in enumerate(screenshots, 1):
         try:
-            send_photo_to_thread(chat_id, screenshot_id, THREAD_ID, caption=f"Скриншот {i}/{len(screenshots)} заявки #{claim_id}")
+            # Если это ЛС, не добавляем thread_id
+            if chat_id == GROUP_ID:
+                send_photo_to_thread(chat_id, screenshot_id, THREAD_ID, caption=f"Скриншот {i}/{len(screenshots)} заявки #{claim_id}")
+            else:
+                bot.send_photo(chat_id, screenshot_id, caption=f"Скриншот {i}/{len(screenshots)} заявки #{claim_id}")
         except Exception as e:
             screenshot_errors += 1
             log_user_action(user_id, "ERROR", f"Failed to send screenshot {i}: {str(e)}")
@@ -3438,9 +3481,17 @@ def handle_presave_request_comment_input(message):
         return
     
     # Проверка на спам/нежелательный контент
-    spam_keywords = ['http://', 'https://', '@', 'телеграм', 'telegram', 't.me']
+    spam_keywords = ['http://', 'https://', 'www.', 'телеграм', 'telegram', 't.me']
     if any(keyword in comment.lower() for keyword in spam_keywords):
         bot.reply_to(message, "❌ В комментарии не должно быть ссылок или упоминаний")
+        log_user_action(user_id, "WARNING", "Spam detected in presave comment")
+        return
+    
+    # Проверка на потенциально оскорбительный контент
+    offensive_words = ['дурак', 'идиот', 'говно', 'хрень']  # базовый список
+    if any(word in comment.lower() for word in offensive_words):
+        bot.reply_to(message, "❌ Комментарий содержит недопустимый контент")
+        log_user_action(user_id, "WARNING", "Offensive content in presave comment")
         return
     
     presave_request_sessions[user_id].comment = comment
@@ -3474,9 +3525,14 @@ def handle_presave_claim_comment_input(message):
 def show_request_confirmation(chat_id: int, user_id: int):
     """Показ финального подтверждения просьбы о пресейве"""
     if user_id not in presave_request_sessions:
+        log_user_action(user_id, "ERROR", "Request session not found in show_request_confirmation")
         return
     
     session = presave_request_sessions[user_id]
+    
+    if not session or not hasattr(session, 'links') or not hasattr(session, 'comment'):
+        log_user_action(user_id, "ERROR", "Invalid request session data")
+        return
     
     confirmation_text = f"""
 🎵 **Объявление о просьбе пресейва готово к публикации**
@@ -3496,26 +3552,61 @@ def show_request_confirmation(chat_id: int, user_id: int):
 def show_claim_confirmation(chat_id: int, user_id: int):
     """Показ финального подтверждения заявки на аппрув"""
     if user_id not in presave_claim_sessions:
+        log_user_action(user_id, "ERROR", "Claim session not found in show_claim_confirmation")
         return
     
     session = presave_claim_sessions[user_id]
     
-    confirmation_text = f"""
-📸 **Заявка на аппрув готова к отправке**
+    # Проверяем валидность сессии
+    if not session or not hasattr(session, 'screenshots') or not hasattr(session, 'comment'):
+        log_user_action(user_id, "ERROR", "Invalid claim session data")
+        return
+    
+    # Проверяем что есть скриншоты
+    if not session.screenshots or len(session.screenshots) == 0:
+        log_user_action(user_id, "ERROR", "No screenshots in claim session")
+        try:
+            bot.send_message(chat_id, "❌ **Ошибка:** нет скриншотов в заявке", parse_mode='Markdown')
+        except Exception as e:
+            log_user_action(user_id, "ERROR", f"Failed to send error message: {str(e)}")
+        return
+    
+    # Проверяем что есть комментарий
+    if not session.comment or len(session.comment.strip()) == 0:
+        log_user_action(user_id, "ERROR", "No comment in claim session")
+        try:
+            bot.send_message(chat_id, "❌ **Ошибка:** отсутствует комментарий к заявке", parse_mode='Markdown')
+        except Exception as e:
+            log_user_action(user_id, "ERROR", f"Failed to send error message: {str(e)}")
+        return
+    
+    try:
+        screenshots_count = len(session.screenshots)
+        comment_text = safe_string(session.comment, 100)
+        
+        confirmation_text = f"""📸 **Заявка на аппрув готова к отправке**
 
-🖼️ **Скриншотов:** {len(session.screenshots)}
-💬 **Комментарий:** {session.comment}
+🖼️ **Скриншотов:** {screenshots_count}
+💬 **Комментарий:** {comment_text}
 
 Отправить заявку админам на рассмотрение?
 """
-    
-    keyboard = InlineKeyboardMarkup(row_width=1)
-    keyboard.add(InlineKeyboardButton("✅ Отправить заявку", callback_data=f"submit_claim_{user_id}"))
-    keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_claim_{user_id}"))
-    
-    bot.send_message(chat_id, confirmation_text, reply_markup=keyboard, parse_mode='Markdown')
+        
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(InlineKeyboardButton("✅ Отправить заявку", callback_data=f"submit_claim_{user_id}"))
+        keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_claim_{user_id}"))
+        
+        bot.send_message(chat_id, confirmation_text, reply_markup=keyboard, parse_mode='Markdown')
+        
+        log_user_action(user_id, "SUCCESS", f"Claim confirmation shown: {screenshots_count} screenshots")
+        
+    except Exception as e:
+        log_user_action(user_id, "ERROR", f"Failed to show claim confirmation: {str(e)}")
+        try:
+            bot.send_message(chat_id, "❌ **Ошибка при отображении подтверждения заявки**", parse_mode='Markdown')
+        except Exception as send_error:
+            log_user_action(user_id, "ERROR", f"Failed to send error message: {str(send_error)}")
 
-# Заглушки для остальных обработчиков callback'ов (чтобы избежать ошибок)
 def handle_cancel_request_callback(call):
     """Отмена просьбы о пресейве"""
     try:
@@ -3738,16 +3829,31 @@ def handle_approve_claim_callback(call):
     admin_id = call.from_user.id
     
     try:
-        # Проверяем что заявка существует и в статусе pending
-        pending_claims = db_manager.get_pending_claims()
-        claim_exists = any(claim['claim_id'] == claim_id for claim in pending_claims)
-        
-        if not claim_exists:
-            bot.answer_callback_query(call.id, "❌ Заявка уже обработана или не существует")
-            return
-        
-        # Подтверждаем заявку
-        db_manager.approve_claim(claim_id, admin_id, True)
+        # Используем транзакцию для предотвращения race condition
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            # Проверяем и обновляем статус в одной транзакции
+            cursor.execute('SELECT status FROM approval_claims WHERE claim_id = ?', (claim_id,))
+            result = cursor.fetchone()
+            
+            if not result:
+                bot.answer_callback_query(call.id, "❌ Заявка не найдена")
+                return
+            
+            if result[0] != 'pending':
+                bot.answer_callback_query(call.id, "❌ Заявка уже обработана")
+                return
+            
+            # Атомарно обновляем статус
+            cursor.execute('''
+                UPDATE approval_claims 
+                SET status = ?, admin_id = ?, processed_at = ?
+                WHERE claim_id = ? AND status = 'pending'
+            ''', ('approved', admin_id, datetime.now().isoformat(), claim_id))
+            
+            if cursor.rowcount == 0:
+                bot.answer_callback_query(call.id, "❌ Заявка уже обработана другим админом")
+                return
         
         bot.edit_message_text(
             f"✅ **Заявка #{claim_id} подтверждена**\n\nАппрув засчитан пользователю",
@@ -3772,16 +3878,31 @@ def handle_reject_claim_callback(call):
     admin_id = call.from_user.id
     
     try:
-        # Проверяем что заявка существует и в статусе pending
-        pending_claims = db_manager.get_pending_claims()
-        claim_exists = any(claim['claim_id'] == claim_id for claim in pending_claims)
-        
-        if not claim_exists:
-            bot.answer_callback_query(call.id, "❌ Заявка уже обработана или не существует")
-            return
-        
-        # Отклоняем заявку
-        db_manager.approve_claim(claim_id, admin_id, False)
+        # Используем транзакцию для предотвращения race condition
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            # Проверяем и обновляем статус в одной транзакции
+            cursor.execute('SELECT status FROM approval_claims WHERE claim_id = ?', (claim_id,))
+            result = cursor.fetchone()
+            
+            if not result:
+                bot.answer_callback_query(call.id, "❌ Заявка не найдена")
+                return
+            
+            if result[0] != 'pending':
+                bot.answer_callback_query(call.id, "❌ Заявка уже обработана")
+                return
+            
+            # Атомарно обновляем статус на rejected
+            cursor.execute('''
+                UPDATE approval_claims 
+                SET status = ?, admin_id = ?, processed_at = ?
+                WHERE claim_id = ? AND status = 'pending'
+            ''', ('rejected', admin_id, datetime.now().isoformat(), claim_id))
+            
+            if cursor.rowcount == 0:
+                bot.answer_callback_query(call.id, "❌ Заявка уже обработана другим админом")
+                return
         
         bot.edit_message_text(
             f"❌ **Заявка #{claim_id} отклонена**\n\nАппрув не засчитан",
@@ -3796,7 +3917,6 @@ def handle_reject_claim_callback(call):
         bot.answer_callback_query(call.id, f"❌ Ошибка: {str(e)}")
         log_user_action(admin_id, "ERROR", f"Failed to reject claim #{claim_id}: {str(e)}")
 
-# Заглушки для остальных функций (упрощенные версии)
 def handle_bot_settings_callback(call):
     """Меню настроек бота для админов"""
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -4292,7 +4412,12 @@ def handle_performance_metrics_callback(call):
 def handle_clear_specific_data_callback(call):
     """Очистка конкретных данных (исправленная версия)"""
     admin_id = call.from_user.id
-    data_type = call.data.split('_')[1]  # links, approvals, asks
+    
+    try:
+        data_type = call.data.split('_')[1]  # links, approvals, asks
+    except (IndexError, ValueError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
     
     try:
         with database_transaction() as conn:
@@ -4487,10 +4612,21 @@ def handle_next_claim_callback(call):
         bot.answer_callback_query(call.id, "❌ Нет прав доступа")
         return
     
-    next_index = int(call.data.split('_')[2])
+    try:
+        next_index = int(call.data.split('_')[2])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
+    
     pending_claims = db_manager.get_pending_claims()
     
     if next_index < len(pending_claims):
+        # Удаляем старое сообщение
+        try:
+            bot.delete_message(call.message.chat.id, call.message.message_id)
+        except:
+            pass
+        
         show_claim_for_approval(call.message.chat.id, pending_claims[next_index], next_index, len(pending_claims))
     else:
         keyboard = InlineKeyboardMarkup()
@@ -4608,10 +4744,19 @@ def handle_reminder_edit_input(message):
     
     if len(new_reminder) < 10:
         bot.reply_to(message, "❌ Текст напоминания слишком короткий (минимум 10 символов)")
+        log_user_action(user_id, "ERROR", "Reminder too short")
         return
     
     if len(new_reminder) > 1000:
         bot.reply_to(message, "❌ Текст напоминания слишком длинный (максимум 1000 символов)")
+        log_user_action(user_id, "ERROR", "Reminder too long")
+        return
+    
+    # Проверка на недопустимый контент
+    forbidden_words = ['http://', 'https://', 'www.', 't.me/', 'telegram.me']
+    if any(word in new_reminder.lower() for word in forbidden_words):
+        bot.reply_to(message, "❌ Напоминание не должно содержать ссылки")
+        log_user_action(user_id, "ERROR", "Reminder contains links")
         return
     
     try:
@@ -4668,10 +4813,25 @@ def handle_username_analytics_input(message):
     """Обработка ввода username для аналитики"""
     user_id = message.from_user.id
     
+    if not message.text:
+        bot.reply_to(message, "❌ Отправьте текст с username")
+        return
+    
     username = message.text.strip().replace('@', '')
     
+    # Валидация username
     if not username:
         bot.reply_to(message, "❌ Укажите корректный username")
+        return
+    
+    if len(username) > 50:
+        bot.reply_to(message, "❌ Username слишком длинный")
+        return
+    
+    # Проверка на недопустимые символы
+    import re
+    if not re.match(r'^[a-zA-Z0-9_]+$', username):
+        bot.reply_to(message, "❌ Username может содержать только буквы, цифры и _")
         return
     
     # Проверяем существование пользователя в БД
@@ -4862,11 +5022,14 @@ def get_user_comparison_analytics(username: str) -> dict:
 
 def format_links_analytics(username: str, data: dict) -> str:
     """Форматирование аналитики ссылок пользователя"""
-    if not data:
+    if not data or not isinstance(data, dict):
         return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
     
-    # Формируем ссылки на последние посты
-    recent_links = data.get('recent_links', [])[:5]
+    # Безопасное получение данных с проверкой типов
+    recent_links = data.get('recent_links', [])
+    if not isinstance(recent_links, list):
+        recent_links = []
+    recent_links = recent_links[:5]
     links_text = ""
     
     if recent_links:
@@ -4890,42 +5053,91 @@ def format_links_analytics(username: str, data: dict) -> str:
 
 def format_approvals_analytics(username: str, data: dict) -> str:
     """Форматирование аналитики аппрувов пользователя"""
-    if not data:
+    if not data or not isinstance(data, dict):
         return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
     
-    return f"""
-📊 **Аналитика аппрувов @{username}**
+    # Безопасное получение данных с проверкой типов
+    approved_claims = data.get('approved_claims', 0)
+    if not isinstance(approved_claims, (int, float)):
+        approved_claims = 0
+        
+    rejected_claims = data.get('rejected_claims', 0)
+    if not isinstance(rejected_claims, (int, float)):
+        rejected_claims = 0
+        
+    pending_claims = data.get('pending_claims', 0)
+    if not isinstance(pending_claims, (int, float)):
+        pending_claims = 0
+        
+    rank = data.get('rank', 'Неизвестно')
+    if not isinstance(rank, str):
+        rank = 'Неизвестно'
+        
+    monthly_stats = data.get('monthly_stats', {})
+    if not isinstance(monthly_stats, dict):
+        monthly_stats = {}
+    
+    # Безопасное формирование строки месячной статистики
+    monthly_lines = []
+    for month, count in monthly_stats.items():
+        if isinstance(month, str) and isinstance(count, (int, float)):
+            monthly_lines.append(f"• {month}: {count} аппрувов")
+    
+    monthly_text = chr(10).join(monthly_lines) if monthly_lines else "Нет данных"
+    
+    return f"""📊 **Аналитика аппрувов @{username}**
 
-✅ **Подтвержденных заявок:** {data.get('approved_claims', 0)}
-❌ **Отклоненных заявок:** {data.get('rejected_claims', 0)}
-⏳ **Ожидающих заявок:** {data.get('pending_claims', 0)}
-🏆 **Звание:** {data.get('rank', 'Неизвестно')}
+✅ **Подтвержденных заявок:** {approved_claims}
+❌ **Отклоненных заявок:** {rejected_claims}
+⏳ **Ожидающих заявок:** {pending_claims}
+🏆 **Звание:** {rank}
 
 **Статистика по месяцам:**
-{chr(10).join([f"• {month}: {count} аппрувов" for month, count in data.get('monthly_stats', {}).items()])}
+{monthly_text}
 """
 
 def format_comparison_analytics(username: str, data: dict) -> str:
     """Форматирование сравнительной аналитики пользователя"""
-    if not data:
+    if not data or not isinstance(data, dict):
         return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
     
+    # Безопасное получение данных с проверкой типов
     requests = data.get('presave_requests', 0)
+    if not isinstance(requests, (int, float)):
+        requests = 0
+        
     approvals = data.get('approved_claims', 0)
-    ratio = round(approvals / requests, 2) if requests > 0 else 0
+    if not isinstance(approvals, (int, float)):
+        approvals = 0
     
-    return f"""
-📊 **Сравнительная аналитика @{username}**
+    # Безопасное вычисление соотношения
+    try:
+        ratio = round(approvals / requests, 2) if requests > 0 else 0
+    except (ZeroDivisionError, TypeError):
+        ratio = 0
+    
+    # Безопасные вызовы функций оценки
+    try:
+        assessment = get_reciprocity_assessment(ratio)
+    except Exception:
+        assessment = "Не удалось оценить"
+        
+    try:
+        recommendations = get_reciprocity_recommendations(ratio, requests, approvals)
+    except Exception:
+        recommendations = "Рекомендации недоступны"
+    
+    return f"""📊 **Сравнительная аналитика @{username}**
 
 🎵 **Просил пресейвы:** {requests} раз
 📸 **Сделал пресейвы:** {approvals} раз
 ⚖️ **Соотношение (аппрув/просьба):** {ratio}
 
 **Оценка взаимности:**
-{get_reciprocity_assessment(ratio)}
+{assessment}
 
 **Рекомендации:**
-{get_reciprocity_recommendations(ratio, requests, approvals)}
+{recommendations}
 """
 
 def get_reciprocity_assessment(ratio: float) -> str:
