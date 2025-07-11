@@ -1070,7 +1070,7 @@ class DatabaseManager:
                     username TEXT,
                     first_name TEXT,
                     last_name TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT (datetime('now')),
                     last_activity TEXT DEFAULT (datetime('now'))
                 )
             ''')
@@ -1083,7 +1083,7 @@ class DatabaseManager:
                     links TEXT,  -- JSON массив ссылок
                     comment TEXT,
                     message_id INTEGER,  -- ID поста в топике
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT (datetime('now')),
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
             ''')
@@ -1111,7 +1111,7 @@ class DatabaseManager:
                     file_content TEXT,  -- base64 encoded
                     file_size INTEGER,
                     file_extension TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT (datetime('now')),
                     expires_at TEXT,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
@@ -1134,7 +1134,7 @@ class DatabaseManager:
                 CREATE TABLE IF NOT EXISTS settings (
                     key TEXT PRIMARY KEY,
                     value TEXT,
-                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    updated_at TEXT DEFAULT (datetime('now'))
                 )
             ''')
             
@@ -1531,9 +1531,10 @@ class DatabaseManager:
                 cursor.execute('''
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES (?, ?, ?)
-                ''', (key, value, datetime.now().isoformat()))
+                ''', ('bot_active', 'true' if active else 'false', datetime.now().isoformat()))
         except Exception as e:
-            log_user_action(0, "ERROR", f"Failed to set bot active: {str(e)}")
+            logger.error(f"❌ Failed to set bot active: {str(e)}")
+            centralized_error_logger(error=e, context="set_bot_active")
     
     def update_setting(self, key: str, value: str):
         """Обновление настройки"""
@@ -1543,9 +1544,10 @@ class DatabaseManager:
                 cursor.execute('''
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES (?, ?, ?)
-                ''', ('bot_active', 'true' if active else 'false', datetime.now().isoformat()))
+                ''', (key, value, datetime.now().isoformat()))
         except Exception as e:
-            log_user_action(0, "ERROR", f"Failed to update setting {key}: {str(e)}")
+            logger.error(f"❌ Failed to update setting {key}: {str(e)}")
+            centralized_error_logger(error=e, context=f"update_setting({key})")
     
     def get_setting(self, key: str, default: str = None) -> str:
         """Получение настройки"""
@@ -4136,23 +4138,33 @@ def main():
         try:
             # Устанавливаем напоминание если не задано
             current_reminder = db_manager.get_setting('reminder_text')
+            logger.info(f"🔧 Current reminder setting: {current_reminder}")
             if not current_reminder:
                 db_manager.update_setting('reminder_text', REMINDER_TEXT)
+                logger.info(f"📝 Set default reminder: {REMINDER_TEXT[:50]}...")
             
             # Устанавливаем режим лимитов по умолчанию
             current_mode = db_manager.get_setting('limit_mode')
+            logger.info(f"🎛️ Current limit mode: {current_mode}")
             if not current_mode:
                 db_manager.update_setting('limit_mode', LimitMode.NORMAL.value)
+                logger.info(f"⚙️ Set default limit mode: {LimitMode.NORMAL.value}")
             
             # Устанавливаем активность бота
             bot_active = db_manager.get_setting('bot_active')
+            logger.info(f"🤖 Bot active setting: {bot_active}")
             if not bot_active:
                 db_manager.update_setting('bot_active', 'true')
+                logger.info("✅ Set bot active: true")
                 
             logger.info("⚙️ Initial settings configured")
         except Exception as settings_error:
-            log_user_action(0, "ERROR", f"Settings configuration failed: {settings_error}")
-            logger.warning(f"⚠️ Settings configuration warning: {settings_error}")
+            logger.error(f"❌ Settings configuration failed: {settings_error}")
+            centralized_error_logger(
+                error=settings_error,
+                context="Initial settings configuration"
+            )
+            logger.warning(f"⚠️ Bot will continue with default settings")
         
         # Запуск HTTP сервера
         port = int(os.getenv('PORT', 5000))
