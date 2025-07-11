@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.14
+# Do Presave Reminder Bot by Mister DMS v24.15
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -2499,6 +2499,12 @@ def callback_handler(call):
         if current_thread != THREAD_ID:
             bot.answer_callback_query(call.id, f"❌ Перейдите в правильный топик: https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}")
             return
+
+    # Очистка просроченных сессий при любом callback'е
+    try:
+        cleanup_expired_sessions()
+    except Exception as cleanup_error:
+        log_user_action(user_id, "WARNING", f"Cleanup error in callback: {str(cleanup_error)}")
     
     # Создаем корреляционный ID для callback'а
     correlation_id = f"callback_{int(time.time() * 1000)}_{call.from_user.id}"
@@ -2865,7 +2871,12 @@ def handle_start_presave_request_callback(call):
     # Создаем сессию пользователя
     user_sessions[user_id] = UserSession(
         state=UserState.ASKING_PRESAVE_COMPLETE,
-        data={'type': 'presave_request'},
+        data={
+            'type': 'presave_request',
+            'chat_id': call.message.chat.id,
+            'message_id': call.message.message_id,
+            'is_group': call.message.chat.type != 'private'
+        },
         timestamp=datetime.now()
     )
     
@@ -3325,6 +3336,12 @@ def handle_text_messages(message):
     if context != "correct_thread":
         return  # Молча игнорируем сообщения в других местах
     
+    # Проверяем есть ли активная интерактивная сессия - если да, пропускаем
+    if user_id in user_sessions:
+        session = user_sessions[user_id]
+        if session.state == UserState.ASKING_PRESAVE_COMPLETE:
+            return  # Пусть handle_interactive_group_messages обработает
+    
     # Добавляем пользователя в БД
     db_manager.add_user(
         user_id=user_id,
@@ -3470,7 +3487,40 @@ def handle_private_messages(message):
 В личных сообщениях доступны только интерактивные формы через меню.
 """)
 
-# Обработчики состояний для интерактивных форм
+@bot.message_handler(content_types=['text'])
+@request_logging  
+def handle_interactive_group_messages(message):
+    """
+    Обработчик групповых сообщений для интерактивных форм
+    """
+    user_id = message.from_user.id
+    
+    # Проверяем только если пользователь в интерактивном состоянии
+    if user_id not in user_sessions:
+        return
+        
+    session = user_sessions[user_id]
+    
+    # Проверяем что это правильная группа и топик
+    if message.chat.id != GROUP_ID:
+        return
+        
+    current_thread = getattr(message, 'message_thread_id', None)
+    if current_thread != THREAD_ID:
+        return
+    
+    # Автоочистка просроченных сессий
+    if session.is_expired():
+        del user_sessions[user_id]
+        if user_id in presave_request_sessions:
+            del presave_request_sessions[user_id]
+        if user_id in presave_claim_sessions:
+            del presave_claim_sessions[user_id]
+        return
+    
+    # Обработка состояний
+    if session.state == UserState.ASKING_PRESAVE_COMPLETE:
+        handle_presave_request_complete_input_group(message)
 
 def handle_presave_request_links_input(message):
     """Обработка ввода ссылок для просьбы о пресейве"""
@@ -3632,6 +3682,139 @@ https://music.apple.com/album/...""")
     # Показываем финальное подтверждение
     show_request_confirmation(message.chat.id, user_id)
 
+def handle_presave_request_complete_input_group(message):
+    """Обработка полного сообщения с описанием и ссылками в группе"""
+    user_id = message.from_user.id
+    full_text = message.text.strip()
+    
+    # Проверка на команды и служебные сообщения
+    if full_text.startswith('/'):
+        # Очищаем состояние и не отвечаем
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+        if user_id in presave_request_sessions:
+            del presave_request_sessions[user_id]
+        return
+    
+    if len(full_text) > 2000:
+        try:
+            bot.reply_to(message, "❌ Слишком длинное сообщение. Максимум 2000 символов")
+            # Удаляем ответ через 10 секунд
+            def delete_later():
+                time.sleep(10)
+                try:
+                    bot.delete_message(message.chat.id, message.message_id + 1)
+                except:
+                    pass
+            threading.Thread(target=delete_later, daemon=True).start()
+        except:
+            pass
+        return
+    
+    if len(full_text) < 10:
+        return  # Молча игнорируем слишком короткие сообщения
+    
+    # Извлекаем ссылки из текста
+    links = extract_links_from_text(full_text)
+    external_links = [link for link in links if is_external_link(link)]
+    
+    if not external_links:
+        return  # Молча игнорируем сообщения без ссылок
+    
+    if len(external_links) > 10:
+        try:
+            bot.reply_to(message, "❌ Слишком много ссылок. Максимум 10 ссылок за раз")
+            # Удаляем ответ через 10 секунд
+            def delete_later():
+                time.sleep(10)
+                try:
+                    bot.delete_message(message.chat.id, message.message_id + 1)
+                except:
+                    pass
+            threading.Thread(target=delete_later, daemon=True).start()
+        except:
+            pass
+        return
+    
+    # Разделяем текст и ссылки
+    text_without_links = full_text
+    for link in external_links:
+        text_without_links = text_without_links.replace(link, "").strip()
+    
+    # Очищаем текст от лишних пробелов и переносов
+    text_without_links = ' '.join(text_without_links.split())
+    
+    if len(text_without_links) < 5:
+        return  # Молча игнорируем если нет описания
+    
+    # Проверка на спам/нежелательный контент
+    spam_keywords = ['телеграм', 'telegram', 't.me']
+    if any(keyword in text_without_links.lower() for keyword in spam_keywords):
+        log_user_action(user_id, "WARNING", "Spam detected in group presave description")
+        return
+    
+    # Сохраняем в сессию
+    if user_id not in presave_request_sessions:
+        presave_request_sessions[user_id] = PresaveRequestSession(
+            links=[], comment="", user_id=user_id, timestamp=datetime.now()
+        )
+    
+    presave_request_sessions[user_id].links = external_links
+    presave_request_sessions[user_id].comment = text_without_links
+    
+    # Сразу публикуем без подтверждения в группе
+    try:
+        username = safe_username(message.from_user)
+        
+        # Формируем сообщение для публикации
+        post_text = f"{safe_string(text_without_links, 500)}\n\n"
+        
+        # Добавляем ссылки
+        for link in external_links:
+            post_text += f"{link}\n"
+        
+        # Добавляем автора в конце
+        post_text += f"\n@{username}"
+        
+        # Публикуем в топике от имени бота
+        published_message = send_message_to_thread(
+            GROUP_ID,
+            post_text,
+            THREAD_ID,
+            parse_mode='Markdown',
+            disable_web_page_preview=True
+        )
+        
+        # Сохраняем в БД
+        request_id = db_manager.add_presave_request(
+            user_id=user_id,
+            links=external_links,
+            comment=text_without_links,
+            message_id=published_message.message_id
+        )
+        
+        # Удаляем оригинальное сообщение пользователя
+        try:
+            bot.delete_message(message.chat.id, message.message_id)
+        except Exception as delete_error:
+            log_user_action(user_id, "WARNING", f"Could not delete original message: {str(delete_error)}")
+        
+        # Очистка сессий
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+        if user_id in presave_request_sessions:
+            del presave_request_sessions[user_id]
+        
+        log_user_action(user_id, "REQUEST_PRESAVE", f"Auto-published group request #{request_id}")
+        
+    except Exception as e:
+        log_user_action(user_id, "ERROR", f"Failed to publish group request: {str(e)}")
+        # Очищаем состояние при ошибке
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+        if user_id in presave_request_sessions:
+            del presave_request_sessions[user_id]
+
 def handle_presave_claim_comment_input(message):
     """Обработка комментария для заявки на аппрув"""
     user_id = message.from_user.id
@@ -3759,14 +3942,34 @@ def handle_cancel_request_callback(call):
     if callback_user_id in presave_request_sessions:
         del presave_request_sessions[callback_user_id]
     
+    # Возвращаем в главное меню вместо просто отмены
+    if validate_admin(callback_user_id):
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(InlineKeyboardButton("📊 Моя статистика", callback_data="my_stats"))
+        keyboard.add(InlineKeyboardButton("🏆 Лидерборд", callback_data="leaderboard"))
+        keyboard.add(InlineKeyboardButton("⚙️ Действия", callback_data="admin_actions"))
+        keyboard.add(InlineKeyboardButton("📊 Расширенная аналитика", callback_data="admin_analytics"))
+        keyboard.add(InlineKeyboardButton("🔧 Диагностика", callback_data="diagnostics"))
+        keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
+        menu_text = "👑 **Админское меню**"
+    else:
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(InlineKeyboardButton("📊 Моя статистика", callback_data="my_stats"))
+        keyboard.add(InlineKeyboardButton("🏆 Лидерборд", callback_data="leaderboard"))
+        keyboard.add(InlineKeyboardButton("⚙️ Действия", callback_data="user_actions"))
+        keyboard.add(InlineKeyboardButton("📊 Аналитика", callback_data="user_analytics"))
+        keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
+        menu_text = "📱 **Главное меню**"
+    
     bot.edit_message_text(
-        "❌ **Просьба о пресейве отменена**",
+        f"❌ **Просьба о пресейве отменена**\n\n{menu_text}",
         call.message.chat.id,
         call.message.message_id,
+        reply_markup=keyboard,
         parse_mode='Markdown'
     )
     
-    log_user_action(callback_user_id, "REQUEST_PRESAVE", "Request cancelled")
+    log_user_action(callback_user_id, "REQUEST_PRESAVE", "Request cancelled, returned to menu")
 
 def handle_publish_request_callback(call):
     """Публикация просьбы о пресейве в топике"""
