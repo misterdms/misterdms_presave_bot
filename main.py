@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.01
+# Do Presave Reminder Bot by Mister DMS v24.02
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -1026,6 +1026,42 @@ def log_performance(operation_name: str = None):
         return wrapper
     return decorator
 
+def topic_restricted(func):
+    """Декоратор для ограничения работы только в определенном топике и ЛС"""
+    @functools.wraps(func)
+    def wrapper(message):
+        user_id = message.from_user.id
+        correlation_id = get_current_context().get('correlation_id')
+        
+        # В ЛС работаем всегда
+        if message.chat.type == 'private':
+            return func(message)
+        
+        # В группах проверяем ID группы и топик
+        if message.chat.id != GROUP_ID:
+            log_user_action(
+                user_id=user_id,
+                action="WARNING_WRONG_GROUP",
+                details=f"Chat {message.chat.id}, expected {GROUP_ID}",
+                correlation_id=correlation_id
+            )
+            return
+        
+        if message.message_thread_id != THREAD_ID:
+            log_user_action(
+                user_id=user_id,
+                action="WARNING_WRONG_THREAD",
+                details=f"Thread {message.message_thread_id}, expected {THREAD_ID}",
+                correlation_id=correlation_id
+            )
+            bot.reply_to(message, 
+                f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом https://t.me/c/{abs(GROUP_ID)}/{THREAD_ID}",
+                message_thread_id=message.message_thread_id)
+            return
+        
+        return func(message)
+    return wrapper
+
 def request_logging(func):
     """Декоратор для логирования входящих запросов"""
     @functools.wraps(func)
@@ -1580,7 +1616,8 @@ db_manager = DatabaseManager('bot.db')
 # ================================
 
 @bot.message_handler(commands=['start'])
-@request_logging
+@topic_restricted
+@request_logging  
 def start_command(message):
     """Приветствие и базовая информация о боте"""
     user_id = message.from_user.id
@@ -1618,6 +1655,7 @@ def start_command(message):
     log_user_action(user_id, "COMMAND", "Start command executed")
 
 @bot.message_handler(commands=['help'])
+@topic_restricted
 @request_logging
 def help_command(message):
     """Справка по использованию бота"""
@@ -1667,6 +1705,7 @@ def help_command(message):
     log_user_action(user_id, "COMMAND", "Help command executed")
 
 @bot.message_handler(commands=['mystat'])
+@topic_restricted
 @request_logging  
 def my_stats_command(message):
     """Личная статистика пользователя с прогресс-барами"""
@@ -1683,6 +1722,7 @@ def my_stats_command(message):
     log_user_action(user_id, "STATS", "Personal stats requested")
 
 @bot.message_handler(commands=['presavestats', 'linkstats'])
+@topic_restricted
 @request_logging
 def presave_stats_command(message):
     """Общий рейтинг и статистика сообщества"""
@@ -1717,6 +1757,7 @@ def presave_stats_command(message):
     log_user_action(user_id, "STATS", "Community stats requested")
 
 @bot.message_handler(commands=['userstat'])
+@topic_restricted
 @request_logging
 def user_stats_command(message):
     """Статистика другого пользователя по @username"""
@@ -1765,6 +1806,7 @@ def user_stats_command(message):
         log_user_action(user_id, "ERROR", f"Failed to get user stats: {str(e)}")
 
 @bot.message_handler(commands=['topusers'])
+@topic_restricted
 @request_logging
 def top_users_command(message):
     """Топ-5 самых активных пользователей"""
@@ -1798,6 +1840,7 @@ def top_users_command(message):
     log_user_action(user_id, "STATS", "Top users requested")
 
 @bot.message_handler(commands=['recent'])
+@topic_restricted
 @request_logging
 def recent_links_command(message):
     """10 последних ссылок с авторами"""
@@ -1825,6 +1868,7 @@ def recent_links_command(message):
     log_user_action(user_id, "STATS", "Recent links requested")
 
 @bot.message_handler(commands=['alllinks'])
+@topic_restricted
 @request_logging
 def all_links_command(message):
     """Все ссылки в файле .txt"""
@@ -1860,6 +1904,7 @@ def all_links_command(message):
     log_user_action(user_id, "STATS", f"All links exported: {len(all_links)} items")
 
 @bot.message_handler(commands=['askpresave'])
+@topic_restricted
 @request_logging
 def ask_presave_command(message):
     """ПРОСЬБА О ПРЕСЕЙВЕ - публикация объявления"""
@@ -1873,6 +1918,7 @@ def ask_presave_command(message):
     log_user_action(user_id, "COMMAND", "Ask presave command")
 
 @bot.message_handler(commands=['claimpresave'])
+@topic_restricted
 @request_logging  
 def claim_presave_command(message):
     """ЗАЯВКА О СОВЕРШЕННОМ ПРЕСЕЙВЕ - подача скриншотов на аппрув"""
@@ -1890,6 +1936,7 @@ def claim_presave_command(message):
 # ================================
 
 @bot.message_handler(commands=['menu'])
+@topic_restricted
 @request_logging
 def menu_command(message):
     """Главное меню - точное соответствие структуре из гайда"""
