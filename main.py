@@ -754,6 +754,19 @@ def get_user_role(user_id: int) -> str:
     """Определение роли пользователя"""
     return 'admin' if user_id in ADMIN_IDS else 'user'
 
+def clean_url(url: str) -> str:
+    """Очистка URL от протокола для правильного формирования webhook"""
+    if not url:
+        return url
+    
+    # Убираем протокол если есть
+    if url.startswith('https://'):
+        return url[8:]
+    elif url.startswith('http://'):
+        return url[7:]
+    
+    return url
+
 # ================================
 # 6. ДОПОЛНИТЕЛЬНЫЕ УТИЛИТЫ (продолжение)
 # ================================
@@ -4034,6 +4047,7 @@ def main():
                 render_url = f"{service_name}.onrender.com"
                 logger.info(f"🔧 Auto-detected Render URL: {render_url}")
             else:
+                logger.error("❌ Не удалось определить URL автоматически")
                 logger.error("❌ RENDER_EXTERNAL_URL не установлен и не удалось автоматически определить URL")
                 logger.error("📝 Установите переменную окружения RENDER_EXTERNAL_URL в Render Dashboard")
                 logger.error("💡 Пример: your-service-name.onrender.com")
@@ -4043,7 +4057,14 @@ def main():
                 start_polling_mode()
                 return
 
-        webhook_url = f"https://{render_url}/{BOT_TOKEN}"
+        webhook_url = f"https://{clean_url(render_url)}/{BOT_TOKEN}"
+        
+        # Дополнительная валидация очищенного URL
+        cleaned_url = clean_url(render_url)
+        if not cleaned_url or '://' in cleaned_url:
+            logger.error(f"❌ Invalid URL after cleaning: {cleaned_url}")
+            logger.error("💡 RENDER_EXTERNAL_URL должен быть: domain.com (без протокола)")
+            return
 
         # Валидация webhook URL
         if not webhook_url.startswith('https://'):
@@ -4057,14 +4078,16 @@ def main():
         # Проверка доступности URL (опционально)
         try:
             import urllib.request
-            urllib.request.urlopen(f"https://{render_url}/health", timeout=5)
-            logger.info("✅ Service URL is accessible")
+            test_url = f"https://{clean_url(render_url)}/health"
+            urllib.request.urlopen(test_url, timeout=5)
+            logger.info(f"✅ Service URL is accessible: {test_url}")
         except Exception as url_check_error:
             logger.warning(f"⚠️ Could not verify URL accessibility: {url_check_error}")
             logger.warning("🔄 Proceeding with webhook setup anyway...")
         
         try:
             logger.info(f"🔧 Setting up webhook: {webhook_url}")
+            logger.info(f"🌐 Cleaned URL: {clean_url(render_url)}")
             logger.info(f"🔑 Secret token: {'configured' if WEBHOOK_SECRET != 'your_secret' else 'not set'}")
             
             webhook_set = bot.set_webhook(
