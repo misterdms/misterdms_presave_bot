@@ -765,6 +765,35 @@ def get_user_role(user_id: int) -> str:
     """Определение роли пользователя"""
     return 'admin' if user_id in ADMIN_IDS else 'user'
 
+def safe_string(text: str, max_length: int = 100) -> str:
+    """Безопасная обработка строк с Unicode"""
+    if not text:
+        return "Unknown"
+    
+    try:
+        # Удаляем null bytes и управляющие символы
+        cleaned = ''.join(char for char in text if ord(char) >= 32 or char in '\n\r\t')
+        
+        # Ограничиваем длину
+        if len(cleaned) > max_length:
+            cleaned = cleaned[:max_length-3] + "..."
+        
+        return cleaned
+    except (UnicodeError, TypeError):
+        return "Unknown"
+
+def safe_username(user) -> str:
+    """Безопасное получение username"""
+    try:
+        if hasattr(user, 'username') and user.username:
+            return safe_string(user.username, 50)
+        elif hasattr(user, 'first_name') and user.first_name:
+            return safe_string(user.first_name, 50)
+        else:
+            return f"User_{user.id if hasattr(user, 'id') else 'Unknown'}"
+    except Exception:
+        return "Unknown"
+
 def clean_url(url: str) -> str:
     """Очистка URL от протокола для правильного формирования webhook"""
     if not url:
@@ -3551,7 +3580,11 @@ def handle_cancel_request_callback(call):
 
 def handle_publish_request_callback(call):
     """Публикация просьбы о пресейве в топике"""
-    callback_user_id = int(call.data.split('_')[2])
+    try:
+        callback_user_id = int(call.data.split('_')[2])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
     
     # Проверка безопасности
     if call.from_user.id != callback_user_id:
@@ -3566,10 +3599,10 @@ def handle_publish_request_callback(call):
     
     try:
         # Формируем сообщение для публикации
-        username = call.from_user.username or call.from_user.first_name or "Unknown"
+        username = safe_username(call.from_user)
         
         post_text = f"🎵 **Просьба о пресейве от @{username}**\n\n"
-        post_text += f"💬 {session.comment}\n\n"
+        post_text += f"💬 {safe_string(session.comment, 500)}\n\n"
         post_text += "🔗 **Ссылки:**\n"
         
         for i, link in enumerate(session.links, 1):
