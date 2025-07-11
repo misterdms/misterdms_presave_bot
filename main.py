@@ -319,7 +319,9 @@ def cleanup_expired_screenshots():
     try:
         with database_transaction() as conn:
             cursor = conn.cursor()
-            cursor.execute('DELETE FROM screenshot_files WHERE expires_at < ?', (cutoff_date,))
+            # Конвертируем datetime в строку для SQLite
+            cutoff_date_str = cutoff_date.isoformat()
+            cursor.execute('DELETE FROM screenshot_files WHERE expires_at < ?', (cutoff_date_str,))
             deleted_count = cursor.rowcount
             if deleted_count > 0:
                 log_user_action(0, "SUCCESS", f"Cleaned up {deleted_count} expired screenshots")
@@ -725,7 +727,7 @@ class WebhookSecurity:
     """Проверка безопасности webhook запросов"""
     
     @staticmethod
-    def verify_telegram_request(headers: dict, content_length: int) -> bool:
+    def verify_telegram_request(headers: dict, content_length: int, client_ip: str = None) -> bool:
         """Базовая проверка безопасности запроса от Telegram"""
         
         # Проверка secret token если установлен
@@ -740,10 +742,13 @@ class WebhookSecurity:
         
         # Проверка User-Agent (Telegram всегда отправляет)
         user_agent = headers.get('User-Agent', '')
+        # Разрешаем пустые запросы для health check
+        if content_length == 0:
+            return True
+        # Разрешаем запросы от Render.com health checks
+        if client_ip == '127.0.0.1' and content_length == 0:
+            return True
         if not user_agent or 'telegram' not in user_agent.lower():
-            # Разрешаем пустые запросы для health check
-            if content_length == 0:
-                return True
             return False
         
         return True
@@ -788,7 +793,11 @@ def cleanup_expired_sessions():
     # Очистка сессий просьб о пресейвах
     expired_request_users = []
     for user_id, session in presave_request_sessions.items():
-        if (current_time - session.timestamp) > timedelta(hours=1):
+        # Конвертируем datetime для сравнения если timestamp строка
+        session_time = session.timestamp
+        if isinstance(session_time, str):
+            session_time = datetime.fromisoformat(session_time)
+        if (current_time - session_time) > timedelta(hours=1):
             expired_request_users.append(user_id)
     
     for user_id in expired_request_users:
@@ -1068,7 +1077,7 @@ class DatabaseManager:
                     first_name TEXT,
                     last_name TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    last_activity TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    last_activity TEXT DEFAULT (datetime('now'))
                 )
             ''')
             
@@ -1109,7 +1118,7 @@ class DatabaseManager:
                     file_size INTEGER,
                     file_extension TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    expires_at TIMESTAMP,
+                    expires_at TEXT,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
             ''')
@@ -1121,7 +1130,7 @@ class DatabaseManager:
                     user_id INTEGER,
                     link_url TEXT,
                     message_id INTEGER,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_at TEXT DEFAULT (datetime('now')),
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
             ''')
@@ -1166,7 +1175,7 @@ class DatabaseManager:
                 cursor = conn.cursor()
                 cursor.execute('''
                     UPDATE users SET last_activity = ? WHERE user_id = ?
-                ''', (datetime.now(), user_id))
+                ''', (datetime.now().isoformat(), user_id))
         except Exception as e:
             log_user_action(user_id, "ERROR", f"Failed to update activity: {str(e)}")
     
@@ -1217,7 +1226,7 @@ class DatabaseManager:
                     UPDATE approval_claims 
                     SET status = ?, admin_id = ?, processed_at = ?
                     WHERE claim_id = ?
-                ''', (status, admin_id, datetime.now(), claim_id))
+                ''', (status, admin_id, datetime.now().isoformat(), claim_id))
                 
                 log_user_action(admin_id, action, f"Claim ID: {claim_id}")
         except Exception as e:
@@ -1255,7 +1264,7 @@ class DatabaseManager:
         """Сохранение скриншота в БД с TTL"""
         try:
             encoded_content = encode_screenshot_for_db(file_content)
-            expires_at = datetime.now() + timedelta(days=SCREENSHOT_TTL_DAYS)
+            expires_at = (datetime.now() + timedelta(days=SCREENSHOT_TTL_DAYS)).isoformat()
             
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
@@ -1281,7 +1290,7 @@ class DatabaseManager:
                 cursor.execute('''
                     SELECT file_content FROM screenshot_files 
                     WHERE file_id = ? AND expires_at > ?
-                ''', (file_id, datetime.now()))
+                ''', (file_id, datetime.now().isoformat()))
                 
                 result = cursor.fetchone()
                 if result:
@@ -1504,7 +1513,7 @@ class DatabaseManager:
         try:
             with sqlite3.connect(self.db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute('SELECT COUNT(*) FROM screenshot_files WHERE expires_at > ?', (datetime.now(),))
+                cursor.execute('SELECT COUNT(*) FROM screenshot_files WHERE expires_at > ?', (datetime.now().isoformat(),))
                 return cursor.fetchone()[0]
         except Exception:
             return 0
@@ -1528,7 +1537,7 @@ class DatabaseManager:
                 cursor.execute('''
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES (?, ?, ?)
-                ''', ('bot_active', 'true' if active else 'false', datetime.now()))
+                ''', (key, value, datetime.now().isoformat()))
         except Exception as e:
             log_user_action(0, "ERROR", f"Failed to set bot active: {str(e)}")
     
@@ -1540,7 +1549,7 @@ class DatabaseManager:
                 cursor.execute('''
                     INSERT OR REPLACE INTO settings (key, value, updated_at)
                     VALUES (?, ?, ?)
-                ''', (key, value, datetime.now()))
+                ''', ('bot_active', 'true' if active else 'false', datetime.now().isoformat()))
         except Exception as e:
             log_user_action(0, "ERROR", f"Failed to update setting {key}: {str(e)}")
     
@@ -3552,7 +3561,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             content_length = int(self.headers.get('Content-Length', 0))
             
             # Проверка безопасности
-            security_check = security.verify_telegram_request(self.headers, content_length)
+            security_check = security.verify_telegram_request(self.headers, content_length, client_ip)
             if not security_check:
                 log_user_action(
                     user_id=0,
@@ -4206,10 +4215,11 @@ def start_http_server(port: int):
     """
     try:
         logger.info(f"🌐 Starting HTTP server on port {port}")
-        logger.info(f"📱 Webhook URL: https://{os.getenv('RENDER_EXTERNAL_URL')}/{BOT_TOKEN}")
-        logger.info("🔧 Health check: https://{}/health".format(os.getenv('RENDER_EXTERNAL_URL')))
-        logger.info("💓 Keep alive: https://{}/keepalive".format(os.getenv('RENDER_EXTERNAL_URL')))
-        logger.info("📊 Metrics: https://{}/metrics".format(os.getenv('RENDER_EXTERNAL_URL')))
+        render_url = clean_url(os.getenv('RENDER_EXTERNAL_URL', ''))
+        logger.info(f"📱 Webhook URL: https://{render_url}/{BOT_TOKEN}")
+        logger.info(f"🔧 Health check: https://{render_url}/health")
+        logger.info(f"💓 Keep alive: https://{render_url}/keepalive")
+        logger.info(f"📊 Metrics: https://{render_url}/metrics")
         
         # Информация о боте
         try:
