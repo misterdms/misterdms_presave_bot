@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.13
+# Do Presave Reminder Bot by Mister DMS v24.14
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -186,6 +186,7 @@ class UserState(Enum):
     # ПРОСЬБА О ПРЕСЕЙВЕ (публикация объявления)
     ASKING_PRESAVE_LINKS = "asking_presave_links" 
     ASKING_PRESAVE_COMMENT = "asking_presave_comment"
+    ASKING_PRESAVE_COMPLETE = "asking_presave_complete"
     # ЗАЯВКА О СОВЕРШЕННОМ ПРЕСЕЙВЕ (аппрув скриншотов)
     CLAIMING_PRESAVE_SCREENSHOTS = "claiming_presave_screenshots"
     CLAIMING_PRESAVE_COMMENT = "claiming_presave_comment"
@@ -2431,28 +2432,34 @@ def callback_handler(call):
     user_id = call.from_user.id
     current_time = time.time()
     
-    # Проверяем возраст callback'а (Telegram timeout ~30 секунд)
-    try:
-        callback_age = current_time - call.message.date
-    except (AttributeError, TypeError):
-        callback_age = 0  # Если не можем определить возраст, продолжаем
-        
-    if callback_age > 25:  # 25 секунд - запас безопасности
-        try:
-            bot.answer_callback_query(call.id, "⏰ Кнопка устарела. Используйте /menu для обновления")
-        except:
-            pass  # Игнорируем ошибки timeout
-        
-        log_user_action(user_id, "WARNING", f"Old callback ignored: {callback_age}s old")
-        return
-    if callback_age > 25:  # 25 секунд - запас безопасности
-        try:
-            bot.answer_callback_query(call.id, "⏰ Кнопка устарела. Используйте /menu для обновления")
-        except:
-            pass  # Игнорируем ошибки timeout
-        
-        log_user_action(user_id, "WARNING", f"Old callback ignored: {callback_age}s old")
-        return
+#    # Возраст callback'а - ИЗЛИШЕСТВО на данном этапе, если в супергруппе всего 130 человек, которые еле активны.
+#    try:
+#        # Используем время создания callback'а вместо сообщения
+#        message_time = call.message.date if hasattr(call.message, 'date') else current_time
+#        callback_age = current_time - message_time
+#    except (AttributeError, TypeError):
+#        callback_age = 0  # Если не можем определить возраст, продолжаем
+#        
+#    # Увеличиваем время жизни callback'ов до 60 секунд
+#    if callback_age > 60:
+#        try:
+#            bot.answer_callback_query(call.id, "⏰ Кнопка устарела, обновляю меню...")
+#            # Автоматически показываем свежее меню вместо просьбы использовать /menu
+#            handle_main_menu_callback(call)
+#            return
+#        except:
+#            pass  # Игнорируем ошибки timeout
+#        
+#        log_user_action(user_id, "WARNING", f"Old callback refreshed: {callback_age}s old")
+#        return
+#    if callback_age > 25:  # 25 секунд - запас безопасности
+#        try:
+#            bot.answer_callback_query(call.id, "⏰ Кнопка устарела. Используйте /menu для обновления")
+#        except:
+#            pass  # Игнорируем ошибки timeout
+#        
+#        log_user_action(user_id, "WARNING", f"Old callback ignored: {callback_age}s old")
+#        return
     
     # Rate limiting для callback'ов (15 в минуту)
     callback_rate_limiter[user_id] = [
@@ -2466,7 +2473,20 @@ def callback_handler(call):
         return
     
     callback_rate_limiter[user_id].append(current_time)
-    
+
+    # Защита от повторных быстрых нажатий на одну кнопку
+    last_callback_data = getattr(threading.current_thread(), '_last_callback_data', {})
+    user_last_data = last_callback_data.get(user_id, {})
+
+    if (user_last_data.get('data') == call.data and 
+        current_time - user_last_data.get('time', 0) < 2):
+        bot.answer_callback_query(call.id, "⏳ Подождите, запрос обрабатывается...")
+        return
+
+    # Сохраняем данные последнего callback'а
+    last_callback_data[user_id] = {'data': call.data, 'time': current_time}
+    threading.current_thread()._last_callback_data = last_callback_data
+
     user_role = get_user_role(user_id)
     
     # Проверяем топик для callback'ов из группы
@@ -2844,7 +2864,7 @@ def handle_start_presave_request_callback(call):
     
     # Создаем сессию пользователя
     user_sessions[user_id] = UserSession(
-        state=UserState.ASKING_PRESAVE_LINKS,
+        state=UserState.ASKING_PRESAVE_COMPLETE,
         data={'type': 'presave_request'},
         timestamp=datetime.now()
     )
@@ -2859,23 +2879,19 @@ def handle_start_presave_request_callback(call):
     request_text = """
 🎵 **Подача объявления с просьбой о пресейве**
 
-📝 **Шаг 1:** Отправьте ссылки на ваш релиз
+📝 Отправьте описание вашего релиза и все необходимые ссылки одним сообщением:
 
-Поддерживаемые платформы:
-• Spotify, Apple Music, Yandex Music
-• YouTube Music, Deezer
-• Bandlink, Taplink и другие конструкторы
-• Популярные социальные сети
-
-**Формат:** Одна ссылка на строку
-
-Пример:
+**Формат сообщения:**
 ```
+Описание релиза и просьба о поддержке
+
 https://open.spotify.com/track/...
 https://music.apple.com/album/...
 https://bandlink.to/...
 ```
+
 """
+```
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("❌ Отменить", callback_data=f"cancel_request_{user_id}"))
@@ -3326,30 +3342,80 @@ def handle_text_messages(message):
     links = extract_links_from_text(text)
     external_links = [link for link in links if is_external_link(link)]
     
-    if external_links:
-        # Сохраняем ссылки в БД
+if external_links:
+    # Сохраняем ссылки в БД в любом случае
+    for link in external_links:
+        db_manager.add_user_link(user_id, link, message.message_id)
+    
+    # Определяем есть ли текст кроме ссылок
+    text_without_links = text
+    for link in external_links:
+        text_without_links = text_without_links.replace(link, "").strip()
+    
+    text_without_links = ' '.join(text_without_links.split())
+    
+    # Если есть описательный текст (более 5 символов) - это просьба о пресейве
+    if len(text_without_links) > 5:
+        username = safe_username(message.from_user)
+        
+        # Формируем сообщение от имени бота
+        bot_post_text = f"{safe_string(text_without_links, 500)}\n\n"
+        
+        # Добавляем ссылки
         for link in external_links:
-            db_manager.add_user_link(user_id, link, message.message_id)
+            bot_post_text += f"{link}\n"
         
-        # Получаем последние 10 просьб о пресейвах для показа
-        recent_requests = db_manager.get_recent_presave_requests(10)
+        # Добавляем автора в конце
+        bot_post_text += f"\n@{username}"
         
-        # Формируем ответ с напоминанием
-        response_text = REMINDER_TEXT + "\n\n"
-        response_text += "🎵 **Последние просьбы о пресейвах:**\n"
-        
-        for i, request in enumerate(recent_requests, 1):
-            username = request.get('username', 'Неизвестно')
-            message_link = f"https://t.me/c/{abs(GROUP_ID)}/{request['message_id']}"
-            response_text += f"{i}. @{username} - [перейти к посту]({message_link})\n"
-        
-        if not recent_requests:
-            response_text += "Пока нет активных просьб о пресейвах"
-        
-        bot.reply_to(message, response_text, parse_mode='Markdown')
-        
-        log_user_action(user_id, "LINK_DETECTED", 
-                       f"External links: {len(external_links)}")
+        try:
+            # Публикуем от имени бота в том же топике
+            published_message = send_message_to_thread(
+                GROUP_ID,
+                bot_post_text,
+                THREAD_ID,
+                parse_mode='Markdown',
+                disable_web_page_preview=True
+            )
+            
+            # Сохраняем в БД как просьбу о пресейве
+            db_manager.add_presave_request(
+                user_id=user_id,
+                links=external_links,
+                comment=text_without_links,
+                message_id=published_message.message_id
+            )
+            
+            # Удаляем оригинальное сообщение пользователя
+            try:
+                bot.delete_message(message.chat.id, message.message_id)
+            except Exception as delete_error:
+                log_user_action(user_id, "WARNING", f"Could not delete original message: {str(delete_error)}")
+            
+            log_user_action(user_id, "REQUEST_PRESAVE", f"Auto-processed from direct message with {len(external_links)} links")
+            
+        except Exception as publish_error:
+            log_user_action(user_id, "ERROR", f"Failed to publish presave request: {str(publish_error)}")
+    
+    # В ЛЮБОМ СЛУЧАЕ отправляем напоминание о необходимости делать пресейвы
+    # Получаем последние 10 просьб о пресейвах для показа
+    recent_requests = db_manager.get_recent_presave_requests(10)
+    
+    # Формируем ответ с напоминанием
+    response_text = REMINDER_TEXT + "\n\n"
+    response_text += "🎵 **Последние просьбы о пресейвах:**\n"
+    
+    for i, request in enumerate(recent_requests, 1):
+        username = request.get('username', 'Неизвестно')
+        message_link = f"https://t.me/c/{abs(GROUP_ID)}/{request['message_id']}"
+        response_text += f"{i}. @{username} - [перейти к посту]({message_link})\n"
+    
+    if not recent_requests:
+        response_text += "Пока нет активных просьб о пресейвах"
+    
+    bot.reply_to(message, response_text, parse_mode='Markdown')
+    
+    log_user_action(user_id, "LINK_DETECTED", f"External links: {len(external_links)}")
 
 @bot.message_handler(content_types=['text'], func=lambda m: m.chat.type == 'private')
 @request_logging
@@ -3381,6 +3447,9 @@ def handle_private_messages(message):
         elif session.state == UserState.ASKING_PRESAVE_COMMENT:
             # Обработка комментария для просьбы о пресейве
             handle_presave_request_comment_input(message)
+        elif session.state == UserState.ASKING_PRESAVE_COMPLETE:
+            # Обработка полного сообщения с описанием и ссылками
+            handle_presave_request_complete_input(message)
         elif session.state == UserState.CLAIMING_PRESAVE_COMMENT:
             # Обработка комментария для заявки на аппрув
             handle_presave_claim_comment_input(message)
@@ -3497,6 +3566,75 @@ def handle_presave_request_comment_input(message):
     presave_request_sessions[user_id].comment = comment
     
     # Показываем финальное подтверждение для просьбы о пресейве
+    show_request_confirmation(message.chat.id, user_id)
+
+def handle_presave_request_complete_input(message):
+    """Обработка полного сообщения с описанием и ссылками для просьбы о пресейве"""
+    user_id = message.from_user.id
+    full_text = message.text.strip()
+    
+    # Проверка на команды и служебные сообщения
+    if full_text.startswith('/'):
+        bot.reply_to(message, "❌ Отправьте описание релиза со ссылками, а не команды. Для отмены используйте /menu")
+        return
+    
+    if len(full_text) > 2000:
+        bot.reply_to(message, "❌ Слишком длинное сообщение. Максимум 2000 символов")
+        return
+    
+    if len(full_text) < 10:
+        bot.reply_to(message, "❌ Слишком короткое сообщение. Добавьте описание релиза и ссылки")
+        return
+    
+    # Извлекаем ссылки из текста
+    links = extract_links_from_text(full_text)
+    external_links = [link for link in links if is_external_link(link)]
+    
+    if not external_links:
+        bot.reply_to(message, """❌ Не найдено ссылок на музыкальные платформы.
+
+📝 Отправьте сообщение в формате:
+```
+Описание вашего релиза и просьба о поддержке
+
+https://open.spotify.com/track/...
+https://music.apple.com/album/...
+```""")
+        return
+    
+    if len(external_links) > 10:
+        bot.reply_to(message, "❌ Слишком много ссылок. Максимум 10 ссылок за раз")
+        return
+    
+    # Разделяем текст и ссылки
+    text_without_links = full_text
+    for link in external_links:
+        text_without_links = text_without_links.replace(link, "").strip()
+    
+    # Очищаем текст от лишних пробелов и переносов
+    text_without_links = ' '.join(text_without_links.split())
+    
+    if len(text_without_links) < 5:
+        bot.reply_to(message, "❌ Добавьте описание релиза перед ссылками")
+        return
+    
+    # Проверка на спам/нежелательный контент
+    spam_keywords = ['телеграм', 'telegram', 't.me']
+    if any(keyword in text_without_links.lower() for keyword in spam_keywords):
+        bot.reply_to(message, "❌ В описании не должно быть упоминаний Telegram")
+        log_user_action(user_id, "WARNING", "Spam detected in presave description")
+        return
+    
+    # Сохраняем в сессию
+    if user_id not in presave_request_sessions:
+        presave_request_sessions[user_id] = PresaveRequestSession(
+            links=[], comment="", user_id=user_id, timestamp=datetime.now()
+        )
+    
+    presave_request_sessions[user_id].links = external_links
+    presave_request_sessions[user_id].comment = text_without_links
+    
+    # Показываем финальное подтверждение
     show_request_confirmation(message.chat.id, user_id)
 
 def handle_presave_claim_comment_input(message):
@@ -3657,20 +3795,22 @@ def handle_publish_request_callback(call):
     try:
         # Формируем сообщение для публикации
         username = safe_username(call.from_user)
-        
-        post_text = f"🎵 **Просьба о пресейве от @{username}**\n\n"
-        post_text += f"💬 {safe_string(session.comment, 500)}\n\n"
-        post_text += "🔗 **Ссылки:**\n"
-        
+
+        post_text = f"{safe_string(session.comment, 500)}\n\n"
+
+        # Добавляем ссылки
         for i, link in enumerate(session.links, 1):
-            post_text += f"{i}. {link}\n"
+            post_text += f"{link}\n"
+
+        # Добавляем автора в конце
+        post_text += f"\n@{username}"
         
-        # Публикуем в топике
-        published_message = bot.send_message(
+        # Публикуем в топике от имени бота
+        published_message = send_message_to_thread(
             GROUP_ID,
             post_text,
+            THREAD_ID,
             parse_mode='Markdown',
-            message_thread_id=THREAD_ID,
             disable_web_page_preview=True
         )
         
@@ -3694,7 +3834,34 @@ def handle_publish_request_callback(call):
             call.message.message_id,
             parse_mode='Markdown'
         )
-        
+
+        # Отправляем напоминание о необходимости делать пресейвы (как в обычном режиме)
+        try:
+            recent_requests = db_manager.get_recent_presave_requests(10)
+            
+            # Формируем ответ с напоминанием
+            reminder_text = REMINDER_TEXT + "\n\n"
+            reminder_text += "🎵 **Последние просьбы о пресейвах:**\n"
+            
+            for i, request in enumerate(recent_requests, 1):
+                username = request.get('username', 'Неизвестно')
+                message_link = f"https://t.me/c/{abs(GROUP_ID)}/{request['message_id']}"
+                reminder_text += f"{i}. @{username} - [перейти к посту]({message_link})\n"
+            
+            if not recent_requests:
+                reminder_text += "Пока нет активных просьб о пресейвах"
+            
+            # Отправляем напоминание в топик (не в ЛС)
+            send_message_to_thread(
+                GROUP_ID,
+                reminder_text,
+                THREAD_ID,
+                parse_mode='Markdown'
+            )
+            
+        except Exception as reminder_error:
+            log_user_action(callback_user_id, "WARNING", f"Failed to send reminder: {str(reminder_error)}")
+
         log_user_action(callback_user_id, "REQUEST_PRESAVE", f"Published request #{request_id}")
         
     except Exception as e:
