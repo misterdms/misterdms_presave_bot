@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.16
+# Do Presave Reminder Bot by Mister DMS v24.17
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -2477,7 +2477,7 @@ def callback_handler(call):
 #        return
     
     # Список "экстренных" callback'ов, которые должны работать всегда
-    emergency_callbacks = ['main_menu', 'back_main', 'back_', 'leaderboard', 'cancel_request_', 'cancel_claim_']
+    emergency_callbacks = ['main_menu', 'back_main', 'back_', 'leaderboard', 'user_actions', 'admin_actions', 'user_analytics', 'admin_analytics', 'bot_settings', 'diagnostics', 'cancel_request_', 'cancel_claim_']
     is_emergency = any(emergency in call.data for emergency in emergency_callbacks)
     
     if not is_emergency:
@@ -2674,6 +2674,18 @@ def callback_handler(call):
             handle_user_approvals_search_callback(call)
         elif call.data == "user_comparison_search":
             handle_user_comparison_search_callback(call)
+        
+        elif call.data == "reset_state":
+            # Экстренный сброс состояния пользователя
+            user_id = call.from_user.id
+            if user_id in user_sessions:
+                del user_sessions[user_id]
+            if user_id in presave_request_sessions:
+                del presave_request_sessions[user_id]
+            if user_id in presave_claim_sessions:
+                del presave_claim_sessions[user_id]
+            handle_main_menu_callback(call)
+            log_user_action(user_id, "SUCCESS", "Emergency state reset")
         
         else:
             # Неизвестный callback
@@ -3017,6 +3029,17 @@ def handle_back_navigation(call):
     except (IndexError, ValueError):
         bot.answer_callback_query(call.id, "❌ Ошибка навигации")
         return
+    
+    user_id = call.from_user.id
+    
+    # КРИТИЧЕСКИ ВАЖНО: Очищаем состояния пользователя при любой навигации
+    if user_id in user_sessions:
+        del user_sessions[user_id]
+        log_user_action(user_id, "SUCCESS", "User session cleared during navigation")
+    if user_id in presave_request_sessions:
+        del presave_request_sessions[user_id]
+    if user_id in presave_claim_sessions:
+        del presave_claim_sessions[user_id]
     
     if destination == "main":
         # Возврат в главное меню
@@ -4456,6 +4479,7 @@ def handle_rate_modes_menu_callback(call):
     keyboard.add(InlineKeyboardButton(f"🟠 Burst{' (активен)' if current_mode == LimitMode.BURST else ''}", callback_data="setmode_burst"))
     keyboard.add(InlineKeyboardButton(f"🔴 Admin Burst{' (активен)' if current_mode == LimitMode.ADMIN_BURST else ''}", callback_data="setmode_adminburst"))
     keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="bot_settings"))
+    keyboard.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))
     
     mode_info = LIMIT_MODES[current_mode]
     text = f"""🎛️ **Режимы лимитов**
@@ -4593,6 +4617,7 @@ def handle_clear_data_menu_callback(call):
     keyboard.add(InlineKeyboardButton("🗑️ Очистить заявки на аппрувы", callback_data="clear_approvals"))
     keyboard.add(InlineKeyboardButton("🗑️ Очистить просьбы о пресейвах", callback_data="clear_asks"))
     keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="bot_settings"))
+    keyboard.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))
     
     bot.edit_message_text(
         "🗑️ **Очистка данных**\n\nВыберите что очистить:",
@@ -4669,6 +4694,7 @@ def handle_user_analytics_callback(call):
     keyboard.add(InlineKeyboardButton("✅ Аппрувы по @username", callback_data="user_approvals_search"))
     keyboard.add(InlineKeyboardButton("⚖️ Соотношение по @username", callback_data="user_comparison_search"))
     keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
+    keyboard.add(InlineKeyboardButton("❌ Сбросить состояние", callback_data="main_menu"))
     
     bot.edit_message_text(
         "📊 **Аналитика пользователей**",
@@ -4685,6 +4711,7 @@ def handle_test_keepalive_callback(call):
     if not render_url:
         keyboard = InlineKeyboardMarkup()
         keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+        keyboard.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))
         
         bot.edit_message_text(
             "❌ **RENDER_EXTERNAL_URL не настроен**\n\nНевозможно выполнить keep alive тест",
@@ -4749,6 +4776,7 @@ def handle_test_system_callback(call):
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+    keyboard.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))
     
     bot.edit_message_text(
         system_text,
@@ -4779,6 +4807,7 @@ def handle_bot_status_info_callback(call):
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+    keyboard.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))
     
     bot.edit_message_text(
         status_text,
@@ -4888,6 +4917,7 @@ def handle_admin_analytics_callback(call):
     keyboard.add(InlineKeyboardButton("✅ Аппрувы по @username", callback_data="admin_user_approvals"))
     keyboard.add(InlineKeyboardButton("⚖️ Соотношение по @username", callback_data="admin_user_comparison"))
     keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="back_main"))
+    keyboard.add(InlineKeyboardButton("❌ Сбросить состояние", callback_data="main_menu"))
     
     bot.edit_message_text(
         "📊 **Расширенная аналитика**",
