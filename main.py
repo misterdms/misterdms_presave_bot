@@ -2444,6 +2444,8 @@ def callback_handler(call):
     """Центральный обработчик всех callback кнопок"""
     user_id = call.from_user.id
     current_time = time.time()
+    # Отладочное логирование для диагностики зависших кнопок
+    log_user_action(user_id, "CALLBACK_START", f"Processing: {call.data}")
     
 #    # Возраст callback'а - ИЗЛИШЕСТВО на данном этапе, если в супергруппе всего 130 человек, которые еле активны.
 #    try:
@@ -2475,7 +2477,7 @@ def callback_handler(call):
 #        return
     
     # Список "экстренных" callback'ов, которые должны работать всегда
-    emergency_callbacks = ['main_menu', 'back_main', 'cancel_request_', 'cancel_claim_']
+    emergency_callbacks = ['main_menu', 'back_main', 'back_', 'leaderboard', 'cancel_request_', 'cancel_claim_']
     is_emergency = any(emergency in call.data for emergency in emergency_callbacks)
     
     if not is_emergency:
@@ -2485,7 +2487,7 @@ def callback_handler(call):
             if current_time - timestamp < 60
         ]
         
-        if len(callback_rate_limiter[user_id]) >= 15:
+        if len(callback_rate_limiter[user_id]) >= 50:
             bot.answer_callback_query(call.id, "⏱️ Слишком частые нажатия. Подождите минуту")
             log_user_action(user_id, "RATE_LIMIT", "Callback rate limit exceeded")
             return
@@ -2692,9 +2694,14 @@ def callback_handler(call):
         metrics.increment('callback.error')
         
         try:
-            bot.answer_callback_query(call.id, "❌ Системная ошибка")
-        except:
-            pass
+            bot.answer_callback_query(call.id, "❌ Системная ошибка. Попробуйте /menu")
+            # Отправляем кнопку экстренного возврата в меню
+            keyboard = InlineKeyboardMarkup()
+            keyboard.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))
+            bot.send_message(call.message.chat.id, "🔧 **Восстановление меню**", 
+                           reply_markup=keyboard, parse_mode='Markdown')
+        except Exception as recovery_error:
+            log_user_action(user_id, "ERROR", f"Recovery failed: {str(recovery_error)}")
     finally:
         # Восстанавливаем предыдущий контекст
         threading.current_thread()._request_context = old_context
@@ -2859,6 +2866,7 @@ def handle_leaderboard_type_callback(call):
     
     keyboard = InlineKeyboardMarkup()
     keyboard.add(InlineKeyboardButton("⬅️ Назад к рейтингам", callback_data="leaderboard"))
+    keyboard.add(InlineKeyboardButton("🏠 Главное меню", callback_data="main_menu"))  # Дополнительная кнопка
     
     bot.edit_message_text(
         text,
