@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.15
+# Do Presave Reminder Bot by Mister DMS v24.16
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -2181,6 +2181,19 @@ def menu_command(message):
     """Главное меню - работает только в правильном топике и ЛС"""
     user_id = message.from_user.id
     
+    # ПРИНУДИТЕЛЬНАЯ ОЧИСТКА ВСЕХ СЕССИЙ при вызове /menu
+    if user_id in user_sessions:
+        del user_sessions[user_id]
+        log_user_action(user_id, "SUCCESS", "User session cleared by /menu command")
+    
+    if user_id in presave_request_sessions:
+        del presave_request_sessions[user_id] 
+        log_user_action(user_id, "SUCCESS", "Presave request session cleared by /menu command")
+    
+    if user_id in presave_claim_sessions:
+        del presave_claim_sessions[user_id]
+        log_user_action(user_id, "SUCCESS", "Presave claim session cleared by /menu command")
+    
     # Команда уже прошла проверку топика через декоратор topic_restricted
     
     # Декоратор topic_restricted уже обработал все проверки
@@ -2217,7 +2230,7 @@ def menu_command(message):
                         reply_markup=keyboard, parse_mode='Markdown',
                         message_thread_id=getattr(message, 'message_thread_id', None))
     
-    log_user_action(user_id, "COMMAND", "Menu opened")
+    log_user_action(user_id, "COMMAND_MENU", "Menu opened and all sessions cleared")
 
 @bot.message_handler(commands=['setmode_conservative', 'setmode_normal', 'setmode_burst', 'setmode_adminburst'])
 @admin_required
@@ -2461,27 +2474,41 @@ def callback_handler(call):
 #        log_user_action(user_id, "WARNING", f"Old callback ignored: {callback_age}s old")
 #        return
     
-    # Rate limiting для callback'ов (15 в минуту)
-    callback_rate_limiter[user_id] = [
-        timestamp for timestamp in callback_rate_limiter[user_id]
-        if current_time - timestamp < 60
-    ]
+    # Список "экстренных" callback'ов, которые должны работать всегда
+    emergency_callbacks = ['main_menu', 'back_main', 'cancel_request_', 'cancel_claim_']
+    is_emergency = any(emergency in call.data for emergency in emergency_callbacks)
     
-    if len(callback_rate_limiter[user_id]) >= 15:
-        bot.answer_callback_query(call.id, "⏱️ Слишком частые нажатия. Подождите минуту")
-        log_user_action(user_id, "RATE_LIMIT", "Callback rate limit exceeded")
-        return
-    
-    callback_rate_limiter[user_id].append(current_time)
+    if not is_emergency:
+        # Rate limiting для callback'ов (15 в минуту) - НЕ для экстренных
+        callback_rate_limiter[user_id] = [
+            timestamp for timestamp in callback_rate_limiter[user_id]
+            if current_time - timestamp < 60
+        ]
+        
+        if len(callback_rate_limiter[user_id]) >= 15:
+            bot.answer_callback_query(call.id, "⏱️ Слишком частые нажатия. Подождите минуту")
+            log_user_action(user_id, "RATE_LIMIT", "Callback rate limit exceeded")
+            return
 
-    # Защита от повторных быстрых нажатий на одну кнопку
-    last_callback_data = getattr(threading.current_thread(), '_last_callback_data', {})
-    user_last_data = last_callback_data.get(user_id, {})
+        callback_rate_limiter[user_id].append(current_time)
 
-    if (user_last_data.get('data') == call.data and 
-        current_time - user_last_data.get('time', 0) < 2):
-        bot.answer_callback_query(call.id, "⏳ Подождите, запрос обрабатывается...")
-        return
+        # Защита от повторных быстрых нажатий - НЕ для экстренных
+        last_callback_data = getattr(threading.current_thread(), '_last_callback_data', {})
+        user_last_data = last_callback_data.get(user_id, {})
+
+        if (user_last_data.get('data') == call.data and 
+            current_time - user_last_data.get('time', 0) < 2):
+            bot.answer_callback_query(call.id, "⏳ Подождите, запрос обрабатывается...")
+            return
+    else:
+        # Для экстренных callback'ов всегда очищаем сессии
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+        if user_id in presave_request_sessions:
+            del presave_request_sessions[user_id]
+        if user_id in presave_claim_sessions:
+            del presave_claim_sessions[user_id]
+        log_user_action(user_id, "SUCCESS", f"Emergency callback {call.data} - sessions cleared")
 
     # Сохраняем данные последнего callback'а
     last_callback_data[user_id] = {'data': call.data, 'time': current_time}
@@ -2504,7 +2531,8 @@ def callback_handler(call):
     try:
         cleanup_expired_sessions()
     except Exception as cleanup_error:
-        log_user_action(user_id, "WARNING", f"Cleanup error in callback: {str(cleanup_error)}")
+        log_user_action(user_id, "ERROR", f"Cleanup error in callback: {str(cleanup_error)}")
+        # Не блокируем callback из-за ошибки cleanup
     
     # Создаем корреляционный ID для callback'а
     correlation_id = f"callback_{int(time.time() * 1000)}_{call.from_user.id}"
@@ -2670,6 +2698,18 @@ def callback_handler(call):
     finally:
         # Восстанавливаем предыдущий контекст
         threading.current_thread()._request_context = old_context
+
+        # Очистка thread-local storage от старых callback данных
+        try:
+            current_thread_data = getattr(threading.current_thread(), '_last_callback_data', {})
+            if len(current_thread_data) > 100:  # Если накопилось слишком много
+                # Оставляем только последние 50 записей
+                sorted_users = sorted(current_thread_data.items(), 
+                                    key=lambda x: x[1].get('time', 0), reverse=True)
+                threading.current_thread()._last_callback_data = dict(sorted_users[:50])
+                log_user_action(0, "SUCCESS", "Thread-local callback data cleaned")
+        except Exception:
+            pass  # Игнорируем ошибки очистки
 
 def handle_proceed_to_comment_callback(call):
     """Переход к комментарию в заявке на аппрув"""
