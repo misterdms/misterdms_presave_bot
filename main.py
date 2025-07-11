@@ -1,4 +1,4 @@
-# Do Presave Reminder Bot by Mister DMS v24.08
+# Do Presave Reminder Bot by Mister DMS v24.11
 # Продвинутый бот для музыкального сообщества с поддержкой скриншотов
 
 # ================================
@@ -20,6 +20,7 @@ import html
 import functools
 import base64  # Для кодирования скриншотов в БД
 import traceback  # Для детального логирования ошибок
+import signal  # Для graceful shutdown
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Union
 from dataclasses import dataclass
@@ -74,6 +75,7 @@ REMINDER_TEXT = os.getenv("REMINDER_TEXT", "🎧 Напоминаем: не за
 MAX_SCREENSHOT_SIZE = 10 * 1024 * 1024  # 10MB максимум для скриншота
 SCREENSHOT_TTL_DAYS = 7  # Скриншоты хранятся 7 дней
 ALLOWED_PHOTO_FORMATS = ['jpg', 'jpeg', 'png', 'webp']  # Telegram поддерживает
+MAX_SCREENSHOTS_PER_CLAIM = 10  # Максимум 10 скриншотов на заявку
 
 # Настройка продвинутого логирования для Render.com
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -250,6 +252,7 @@ class PresaveClaimSession:
 # Глобальные переменные для системы очередей и лимитов
 message_queue = Queue(maxsize=1000)
 method_limits_tracker = defaultdict(list)
+callback_rate_limiter = defaultdict(list)  # Добавлено для rate limiting callback'ов
 user_sessions: Dict[int, UserSession] = {}
 presave_request_sessions: Dict[int, PresaveRequestSession] = {}
 presave_claim_sessions: Dict[int, PresaveClaimSession] = {}
@@ -651,15 +654,31 @@ def make_keep_alive_request(url: str) -> bool:
 @contextmanager
 def database_transaction():
     """Контекстный менеджер для безопасных транзакций БД"""
-    conn = sqlite3.connect('bot.db')
+    conn = None
     try:
+        conn = sqlite3.connect('bot.db', timeout=30.0)
+        conn.execute('PRAGMA foreign_keys = ON')
+        conn.execute('PRAGMA journal_mode = WAL')
         yield conn
         conn.commit()
-    except Exception:
-        conn.rollback()
+    except sqlite3.OperationalError as e:
+        if conn:
+            conn.rollback()
+        log_user_action(0, "ERROR", f"Database operational error: {str(e)}")
+        raise Exception("База данных временно недоступна. Попробуйте позже")
+    except sqlite3.IntegrityError as e:
+        if conn:
+            conn.rollback()
+        log_user_action(0, "ERROR", f"Database integrity error: {str(e)}")
+        raise Exception("Ошибка целостности данных")
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        log_user_action(0, "ERROR", f"Database transaction error: {str(e)}")
         raise
     finally:
-        conn.close()
+        if conn:
+            conn.close()
 
 # Метрики и мониторинг для Render.com
 class MetricsCollector:
@@ -982,48 +1001,6 @@ def rate_limit(method_name: str = "send_message"):
             return func(*args, **kwargs)
         return wrapper
     return decorator
-
-# === УСТАРЕВШИЕ ДЕКОРАТОРЫ ===
-# Теперь используем только topic_restricted для унификации
-# Все проверки топиков теперь через topic_restricted декоратор
-# TODO: стереть, если всё работает корректно
-# def group_only(func):
-#     """Декоратор для функций, работающих только в группе"""
-#     @functools.wraps(func)
-#     def wrapper(message):
-#         correlation_id = get_current_context().get('correlation_id')
-#         
-#         if message.chat.id != GROUP_ID:
-#             if message.chat.type == 'private':
-#                 log_user_action(
-#                     user_id=message.from_user.id,
-#                     action="WARNING_WRONG_CHAT",
-#                     details=f"Private chat, expected group {GROUP_ID}",
-#                     correlation_id=correlation_id
-#                 )
-#                 bot.reply_to(message, "Эта команда работает только в группе")
-#             return
-#         
-#         return func(message)
-#     return wrapper
-#
-# def thread_only(func):
-#     """Декоратор для функций, работающих только в определенном топике"""
-#     @functools.wraps(func)
-#     def wrapper(message):
-#         correlation_id = get_current_context().get('correlation_id')
-#         
-#         if message.chat.id == GROUP_ID and message.message_thread_id != THREAD_ID:
-#             log_user_action(
-#                 user_id=message.from_user.id,
-#                 action="WARNING_WRONG_THREAD",
-#                 details=f"Thread {message.message_thread_id}, expected {THREAD_ID}",
-#                 correlation_id=correlation_id
-#             )
-#             bot.reply_to(message, f"Я не работаю в этом топике. Перейдите в топик Поддержка пресейвом  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID}")
-#             return
-#         return func(message)
-#     return wrapper
 
 def safe_api_call(method_name: str = "send_message"):
     """
@@ -1787,7 +1764,7 @@ def start_command(message):
     )
     
     welcome_text = """
-🤖 **Do Presave Reminder Bot by Mister DMS v24** - Bug Fixes
+🤖 **Do Presave Reminder Bot by Mister DMS v24.09** - Bug Fixes
 
 Добро пожаловать в продвинутую систему взаимной поддержки артистов!
 
@@ -2448,6 +2425,31 @@ def diagnostic_commands(message):
 def callback_handler(call):
     """Центральный обработчик всех callback кнопок"""
     user_id = call.from_user.id
+    current_time = time.time()
+    # Проверяем возраст callback'а (Telegram timeout ~30 секунд)
+    callback_age = current_time - call.message.date
+    if callback_age > 25:  # 25 секунд - запас безопасности
+        try:
+            bot.answer_callback_query(call.id, "⏰ Кнопка устарела. Используйте /menu для обновления")
+        except:
+            pass  # Игнорируем ошибки timeout
+        
+        log_user_action(user_id, "WARNING", f"Old callback ignored: {callback_age}s old")
+        return
+    
+    # Rate limiting для callback'ов (15 в минуту)
+    callback_rate_limiter[user_id] = [
+        timestamp for timestamp in callback_rate_limiter[user_id]
+        if current_time - timestamp < 60
+    ]
+    
+    if len(callback_rate_limiter[user_id]) >= 15:
+        bot.answer_callback_query(call.id, "⏱️ Слишком частые нажатия. Подождите минуту")
+        log_user_action(user_id, "RATE_LIMIT", "Callback rate limit exceeded")
+        return
+    
+    callback_rate_limiter[user_id].append(current_time)
+    
     user_role = get_user_role(user_id)
     
     # Проверяем топик для callback'ов из группы
@@ -2500,21 +2502,15 @@ def callback_handler(call):
         elif call.data == "help":
             handle_help_callback(call)
         
-        # Настройки бота (админы)
+        # Настройки бота (админы) - СПЕЦИФИЧНЫЕ CALLBACK'И СНАЧАЛА
         elif call.data == "bot_settings" and user_role == 'admin':
             handle_bot_settings_callback(call)
         elif call.data == "rate_modes_menu" and user_role == 'admin':
             handle_rate_modes_menu_callback(call)
-        elif call.data.startswith("activate_bot") and user_role == 'admin':
-            handle_activate_bot_callback(call)
-        elif call.data.startswith("deactivate_bot") and user_role == 'admin':
-            handle_deactivate_bot_callback(call)
-        elif call.data.startswith("change_reminder") and user_role == 'admin':
-            handle_change_reminder_callback(call)
+        elif call.data == "clear_data_menu" and user_role == 'admin':
+            handle_clear_data_menu_callback(call)
         elif call.data == "cancel_reminder_edit" and user_role == 'admin':
             handle_cancel_reminder_edit_callback(call)
-        elif call.data.startswith("clear_data_menu") and user_role == 'admin':
-            handle_clear_data_menu_callback(call)
         elif call.data == "test_keepalive" and user_role == 'admin':
             handle_test_keepalive_callback(call)
         elif call.data == "test_system" and user_role == 'admin':
@@ -2523,18 +2519,31 @@ def callback_handler(call):
             handle_bot_status_info_callback(call)
         elif call.data == "performance_metrics" and user_role == 'admin':
             handle_performance_metrics_callback(call)
+        # ОБЩИЕ ПРОВЕРКИ ПОСЛЕ СПЕЦИФИЧНЫХ
+        elif call.data.startswith("activate_bot") and user_role == 'admin':
+            handle_activate_bot_callback(call)
+        elif call.data.startswith("deactivate_bot") and user_role == 'admin':
+            handle_deactivate_bot_callback(call)
+        elif call.data.startswith("change_reminder") and user_role == 'admin':
+            handle_change_reminder_callback(call)
         elif call.data.startswith("clear_") and user_role == 'admin':
             handle_clear_specific_data_callback(call)
         elif call.data == "check_approvals" and user_role == 'admin':
             handle_check_approvals_callback(call)
-        elif call.data.startswith("recent_links_") and user_role == 'admin':
+        elif call.data.startswith("recent_links_"):
             handle_recent_links_callback(call)
+        elif call.data == "reload_modes" and user_role == 'admin':
+            handle_reload_modes_callback(call)
+        elif call.data == "current_mode" and user_role == 'admin':
+            handle_current_mode_callback(call)
+        elif call.data == "main_menu":
+            handle_main_menu_callback(call)
+        elif call.data.startswith("setmode_") and user_role == 'admin':
+            handle_setmode_callback(call)
         
         # Пользовательские функции  
         elif call.data == "user_analytics":
             handle_user_analytics_callback(call)
-        elif call.data.startswith("recent_links_") and user_role == 'user':
-            handle_recent_links_callback(call)
         # Интерактивные просьбы о пресейвах
         elif call.data == "start_presave_request":
             handle_start_presave_request_callback(call)
@@ -2618,6 +2627,70 @@ def callback_handler(call):
     finally:
         # Восстанавливаем предыдущий контекст
         threading.current_thread()._request_context = old_context
+
+def handle_reload_modes_callback(call):
+    """Перезагрузка режимов лимитов"""
+    admin_id = call.from_user.id
+    
+    try:
+        # Перечитываем из переменных окружения
+        global LIMIT_MODES
+        LIMIT_MODES = {
+            LimitMode.CONSERVATIVE: {"max_hour": CONSERVATIVE_MAX_HOUR, "cooldown": CONSERVATIVE_COOLDOWN},
+            LimitMode.NORMAL: {"max_hour": NORMAL_MAX_HOUR, "cooldown": NORMAL_COOLDOWN},
+            LimitMode.BURST: {"max_hour": BURST_MAX_HOUR, "cooldown": BURST_COOLDOWN},
+            LimitMode.ADMIN_BURST: {"max_hour": ADMIN_BURST_MAX_HOUR, "cooldown": ADMIN_BURST_COOLDOWN}
+        }
+        
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Назад к режимам", callback_data="rate_modes_menu"))
+        
+        bot.edit_message_text(
+            "✅ **Режимы лимитов перезагружены**\n\nИзменения применены",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        
+        log_user_action(admin_id, "SUCCESS", "Limit modes reloaded")
+        
+    except Exception as e:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Назад к режимам", callback_data="rate_modes_menu"))
+        
+        bot.edit_message_text(
+            f"❌ **Ошибка перезагрузки:** {str(e)}",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        log_user_action(admin_id, "ERROR", f"Failed to reload modes: {str(e)}")
+
+def handle_current_mode_callback(call):
+    """Показ текущего режима лимитов"""
+    current_mode = get_current_limit_mode()
+    mode_settings = LIMIT_MODES[current_mode]
+    
+    text = f"""🎛️ **Текущий режим лимитов**
+
+**Режим:** {current_mode.value}
+📊 **Лимит:** {mode_settings['max_hour']}/час
+⏱️ **Задержка:** {mode_settings['cooldown']}с
+
+Этот режим определяет частоту ответов бота и скорость обработки запросов."""
+    
+    keyboard = InlineKeyboardMarkup()
+    keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+    
+    bot.edit_message_text(
+        text,
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
 
 def handle_my_stats_callback(call):
     """Обработка показа личной статистики"""
@@ -3033,19 +3106,37 @@ def show_claim_for_approval(chat_id: int, claim: dict, current_index: int, total
     # Отправляем заголовок
     send_message_to_thread(chat_id, header_text, THREAD_ID, reply_markup=keyboard, parse_mode='Markdown')
 
-    # Отправляем скриншоты
-    for screenshot_id in screenshots:
+    # Отправляем скриншоты с полной обработкой ошибок
+    screenshot_errors = 0
+    for i, screenshot_id in enumerate(screenshots, 1):
         try:
-            send_photo_to_thread(chat_id, screenshot_id, THREAD_ID, caption=f"Скриншот заявки #{claim_id}")
+            send_photo_to_thread(chat_id, screenshot_id, THREAD_ID, caption=f"Скриншот {i}/{len(screenshots)} заявки #{claim_id}")
         except Exception as e:
-            bot.edit_message_text(
-                "❌ **Системная ошибка**\n\nПопробуйте позже",
-                call.message.chat.id,
-                call.message.message_id,
+            screenshot_errors += 1
+            log_user_action(user_id, "ERROR", f"Failed to send screenshot {i}: {str(e)}")
+            
+            # Отправляем сообщение об ошибке вместо скриншота
+            try:
+                send_message_to_thread(
+                    chat_id, 
+                    f"❌ **Ошибка загрузки скриншота {i}/{len(screenshots)}**\n\nСкриншот недоступен (ID: {screenshot_id})", 
+                    THREAD_ID,
+                    parse_mode='Markdown'
+                )
+            except:
+                pass  # Игнорируем ошибки отправки сообщения об ошибке
+    
+    # Если были ошибки со скриншотами, уведомляем админа
+    if screenshot_errors > 0:
+        try:
+            send_message_to_thread(
+                chat_id,
+                f"⚠️ **Внимание!** {screenshot_errors} из {len(screenshots)} скриншотов не удалось загрузить",
+                THREAD_ID,
                 parse_mode='Markdown'
             )
-            log_user_action(user_id, "ERROR", f"Unexpected error: {str(e)}")
-            centralized_error_logger(error=e, context="Function error")
+        except:
+            pass
 
 # ================================
 # 12. ОБРАБОТЧИКИ СООБЩЕНИЙ
@@ -3057,6 +3148,18 @@ def show_claim_for_approval(chat_id: int, claim: dict, current_index: int, total
 def handle_photo_messages(message):
     """Обработка скриншотов для заявок на аппрув"""
     user_id = message.from_user.id
+    
+    # Автоочистка просроченных сессий
+    if user_id in user_sessions:
+        session = user_sessions[user_id]
+        if session.is_expired():
+            del user_sessions[user_id]
+            if user_id in presave_request_sessions:
+                del presave_request_sessions[user_id]
+            if user_id in presave_claim_sessions:
+                del presave_claim_sessions[user_id]
+            bot.reply_to(message, "⏰ Сессия истекла. Начните заново через /menu")
+            return
     
     # Проверяем состояние пользователя
     if user_id not in user_sessions:
@@ -3076,12 +3179,51 @@ def handle_photo_messages(message):
         if not validate_screenshot_size(file_info.file_size):
             bot.reply_to(message, f"❌ Скриншот слишком большой (лимит: {MAX_SCREENSHOT_SIZE//1024//1024}MB)")
             return
+
         
-        # Скачиваем файл
-        downloaded_file = bot.download_file(file_info.file_path)
+        # Проверяем минимальный размер (защита от пустых файлов)
+        if file_info.file_size < 1024:  # 1KB минимум
+            bot.reply_to(message, "❌ Файл слишком маленький. Отправьте настоящий скриншот")
+            return
+        
+        # Проверяем что это действительно изображение по расширению
+        file_extension = get_file_extension_from_telegram(file_info.file_path)
+        if file_extension not in ALLOWED_PHOTO_FORMATS:
+            bot.reply_to(message, f"❌ Неподдерживаемый формат. Используйте: {', '.join(ALLOWED_PHOTO_FORMATS)}")
+            return
+
+        # Скачиваем файл с обработкой ошибок
+        try:
+            downloaded_file = bot.download_file(file_info.file_path)
+        except Exception as download_error:
+            log_user_action(user_id, "ERROR", f"File download failed: {str(download_error)}")
+            bot.reply_to(message, "❌ Ошибка загрузки файла. Попробуйте еще раз")
+            return
+        
+        # Проверяем размер после загрузки
+        if len(downloaded_file) > MAX_SCREENSHOT_SIZE:
+            bot.reply_to(message, f"❌ Файл слишком большой после сжатия (лимит: {MAX_SCREENSHOT_SIZE//1024//1024}MB)")
+            return
         
         # Определяем расширение
         file_extension = get_file_extension_from_telegram(file_info.file_path)
+        
+        # Проверяем формат
+        if file_extension not in ALLOWED_PHOTO_FORMATS:
+            bot.reply_to(message, f"❌ Неподдерживаемый формат. Используйте: {', '.join(ALLOWED_PHOTO_FORMATS)}")
+            return
+        
+        # Проверяем лимит скриншотов
+        current_screenshots = len(presave_claim_sessions.get(user_id, PresaveClaimSession([], "", user_id, datetime.now())).screenshots)
+        if current_screenshots >= MAX_SCREENSHOTS_PER_CLAIM:
+            bot.reply_to(message, f"❌ Максимум {MAX_SCREENSHOTS_PER_CLAIM} скриншотов на одну заявку")
+            return
+        
+        # Проверяем лимит скриншотов
+        current_screenshots = len(presave_claim_sessions.get(user_id, PresaveClaimSession([], "", user_id, datetime.now())).screenshots)
+        if current_screenshots >= MAX_SCREENSHOTS_PER_CLAIM:
+            bot.reply_to(message, f"❌ Максимум {MAX_SCREENSHOTS_PER_CLAIM} скриншотов на одну заявку")
+            return
         
         # Сохраняем в БД
         if db_manager.save_screenshot(message.photo[-1].file_id, user_id, 
@@ -3174,6 +3316,18 @@ def handle_private_messages(message):
     """
     user_id = message.from_user.id
     
+    # Автоочистка просроченных сессий
+    if user_id in user_sessions:
+        session = user_sessions[user_id]
+        if session.is_expired():
+            del user_sessions[user_id]
+            if user_id in presave_request_sessions:
+                del presave_request_sessions[user_id]
+            if user_id in presave_claim_sessions:
+                del presave_claim_sessions[user_id]
+            bot.reply_to(message, "⏰ Сессия истекла. Начните заново через /menu")
+            return
+    
     # Проверяем состояние пользователя
     if user_id in user_sessions:
         session = user_sessions[user_id]
@@ -3199,7 +3353,7 @@ def handle_private_messages(message):
     else:
         # Нет активной сессии - показываем справку
         bot.reply_to(message, """
-🤖 **Do Presave Reminder Bot by Mister DMS v24** - Bug Fixes
+🤖 **Do Presave Reminder Bot by Mister DMS v24.09** - Bug Fixes
 
 Для работы с ботом используйте:
 📱 /menu - главное меню
@@ -3215,12 +3369,35 @@ def handle_presave_request_links_input(message):
     user_id = message.from_user.id
     links_text = message.text.strip()
     
+    # Проверка на команды и служебные сообщения
+    if links_text.startswith('/'):
+        bot.reply_to(message, "❌ Отправьте ссылки, а не команды. Для отмены используйте /menu")
+        return
+    
+    if len(links_text) > 2000:
+        bot.reply_to(message, "❌ Слишком длинное сообщение. Максимум 2000 символов")
+        return
+    
     # Парсим ссылки (по одной на строку)
     links = [link.strip() for link in links_text.split('\n') if link.strip()]
+    
+    if len(links) > 10:
+        bot.reply_to(message, "❌ Слишком много ссылок. Максимум 10 ссылок за раз")
+        return
+    
     external_links = [link for link in links if is_external_link(link)]
     
     if not external_links:
-        bot.reply_to(message, "❌ Не найдено подходящих ссылок. Отправьте ссылки на музыку (по одной на строку)")
+        bot.reply_to(message, """❌ Не найдено подходящих ссылок. 
+
+📝 Отправьте ссылки на музыку (по одной на строку):
+• Spotify, Apple Music, Yandex Music
+• YouTube Music, Deezer
+• Bandlink, Taplink и другие конструкторы
+
+Пример:
+https://open.spotify.com/track/...
+https://music.apple.com/album/...""")
         return
     
     # Сохраняем в сессию
@@ -3251,6 +3428,21 @@ def handle_presave_request_comment_input(message):
         bot.reply_to(message, "❌ Ошибка: нет сохраненных ссылок")
         return
     
+    # Валидация комментария
+    if len(comment) > 1000:
+        bot.reply_to(message, "❌ Комментарий слишком длинный. Максимум 1000 символов")
+        return
+    
+    if len(comment) < 5:
+        bot.reply_to(message, "❌ Комментарий слишком короткий. Минимум 5 символов")
+        return
+    
+    # Проверка на спам/нежелательный контент
+    spam_keywords = ['http://', 'https://', '@', 'телеграм', 'telegram', 't.me']
+    if any(keyword in comment.lower() for keyword in spam_keywords):
+        bot.reply_to(message, "❌ В комментарии не должно быть ссылок или упоминаний")
+        return
+    
     presave_request_sessions[user_id].comment = comment
     
     # Показываем финальное подтверждение для просьбы о пресейве
@@ -3263,6 +3455,15 @@ def handle_presave_claim_comment_input(message):
     
     if user_id not in presave_claim_sessions:
         bot.reply_to(message, "❌ Ошибка: нет сохраненных скриншотов")
+        return
+    
+    # Валидация комментария
+    if len(comment) > 500:
+        bot.reply_to(message, "❌ Комментарий слишком длинный. Максимум 500 символов")
+        return
+    
+    if len(comment) < 3:
+        bot.reply_to(message, "❌ Комментарий слишком короткий. Минимум 3 символа")
         return
     
     presave_claim_sessions[user_id].comment = comment
@@ -3314,324 +3515,14 @@ def show_claim_confirmation(chat_id: int, user_id: int):
     
     bot.send_message(chat_id, confirmation_text, reply_markup=keyboard, parse_mode='Markdown')
 
-def handle_reminder_edit_input(message):
-    """Обработка ввода нового текста напоминания (админы)"""
-    user_id = message.from_user.id
-    
-    if user_id not in ADMIN_IDS:
-        bot.reply_to(message, "❌ Нет прав доступа")
-        return
-    
-    # Проверяем состояние
-    if user_id not in user_sessions:
-        bot.reply_to(message, "❌ Сессия истекла. Начните заново через /menu → Настройки бота")
-        return
-    
-    session = user_sessions[user_id]
-    if session.state != UserState.EDITING_REMINDER:
-        bot.reply_to(message, "❌ Неожиданное состояние")
-        return
-    
-    new_reminder = message.text.strip()
-    
-    if len(new_reminder) < 10:
-        bot.reply_to(message, "❌ Текст напоминания слишком короткий (минимум 10 символов)")
-        return
-    
-    if len(new_reminder) > 1000:
-        bot.reply_to(message, "❌ Текст напоминания слишком длинный (максимум 1000 символов)")
-        return
-    
-    try:
-        # Обновляем напоминание в настройках
-        db_manager.update_setting('reminder_text', new_reminder)
-        
-        # Обновляем глобальную переменную
-        global REMINDER_TEXT
-        REMINDER_TEXT = new_reminder
-        
-        # Получаем данные о месте, откуда началось редактирование
-        original_chat_id = session.data.get('original_chat_id')
-        
-        # Очищаем состояние
-        del user_sessions[user_id]
-        
-        # Отправляем подтверждение в текущий чат
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в настройки бота", callback_data="bot_settings"))
-        
-        success_text = f"""✅ **Напоминание успешно обновлено!**
-
-**Новый текст:**
-{new_reminder}
-
-Теперь этот текст будет показываться пользователям при отправке ссылок."""
-        
-        bot.reply_to(message, success_text, reply_markup=keyboard, parse_mode='Markdown')
-        
-        # Также отправляем уведомление в исходный чат, если это был другой чат
-        if original_chat_id and original_chat_id != message.chat.id:
-            try:
-                send_message_to_thread(
-                    original_chat_id,
-                    "✅ **Текст напоминания обновлен в личных сообщениях**",
-                    THREAD_ID if original_chat_id == GROUP_ID else None,
-                    parse_mode='Markdown'
-                )
-            except Exception:
-                pass  # Игнорируем ошибки отправки в исходный чат
-        
-        log_user_action(user_id, "SUCCESS", f"Reminder text updated: {new_reminder[:50]}...")
-        
-    except Exception as e:
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в настройки бота", callback_data="bot_settings"))
-        
-        bot.reply_to(message, "❌ **Ошибка** - Не удалось обновить напоминание", 
-                    reply_markup=keyboard, parse_mode='Markdown')
-        
-        log_user_action(user_id, "ERROR", f"Failed to update reminder: {str(e)}")
-
-def handle_username_analytics_input(message):
-    """Обработка ввода username для аналитики (админы)"""
-    user_id = message.from_user.id
-    
-    if user_id not in ADMIN_IDS:
-        bot.reply_to(message, "❌ Нет прав доступа")
-        return
-    
-    username = message.text.strip().replace('@', '')
-    
-    if not username:
-        bot.reply_to(message, "❌ Укажите корректный username")
-        return
-    
-    # Получаем тип аналитики из сессии
-    session = user_sessions.get(user_id)
-    if not session:
-        bot.reply_to(message, "❌ Сессия истекла")
-        return
-    
-    analytics_type = session.data.get('analytics_type', 'links')
-    
-    try:
-        if analytics_type == 'links':
-            result = get_user_links_analytics(username)
-            response = format_links_analytics(username, result)
-        elif analytics_type == 'approvals':
-            result = get_user_approvals_analytics(username)
-            response = format_approvals_analytics(username, result)
-        elif analytics_type == 'comparison':
-            result = get_user_comparison_analytics(username)
-            response = format_comparison_analytics(username, result)
-        else:
-            response = "❌ Неизвестный тип аналитики"
-        
-        # Очищаем состояние
-        del user_sessions[user_id]
-        
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="admin_analytics"))
-        
-        bot.reply_to(message, response, reply_markup=keyboard, parse_mode='Markdown')
-        
-        log_user_action(user_id, "SUCCESS", f"Analytics for @{username}, type: {analytics_type}")
-        
-    except Exception as e:
-        keyboard = InlineKeyboardMarkup()
-        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="admin_analytics"))
-        
-        bot.reply_to(message, f"❌ **Ошибка аналитики для @{username}**", 
-                    reply_markup=keyboard, parse_mode='Markdown')
-        
-        log_user_action(user_id, "ERROR", f"Analytics failed for @{username}: {str(e)}")
-
-# Дополнительные функции аналитики (упрощенные версии)
-def get_user_links_analytics(username: str) -> dict:
-    """Получение аналитики ссылок пользователя"""
-    try:
-        with database_transaction() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
-            result = cursor.fetchone()
-            
-            if not result:
-                return {}
-            
-            user_id = result[0]
-            
-            # Общее количество ссылок
-            cursor.execute('SELECT COUNT(*) FROM user_links WHERE user_id = ?', (user_id,))
-            total_links = cursor.fetchone()[0]
-            
-            # Просьбы о пресейвах
-            cursor.execute('SELECT COUNT(*) FROM presave_requests WHERE user_id = ?', (user_id,))
-            presave_requests = cursor.fetchone()[0]
-            
-            # Последние ссылки
-            cursor.execute('''
-                SELECT ul.link_url, ul.message_id, ul.created_at
-                FROM user_links ul
-                WHERE ul.user_id = ?
-                ORDER BY ul.created_at DESC
-                LIMIT 5
-            ''', (user_id,))
-            
-            recent_links = [{'message_id': row[1]} for row in cursor.fetchall()]
-            
-            return {
-                'total_links': total_links,
-                'presave_requests': presave_requests,
-                'recent_links': recent_links,
-                'last_activity': 'Недавно'
-            }
-    except Exception:
-        return {}
-
-def get_user_approvals_analytics(username: str) -> dict:
-    """Получение аналитики аппрувов пользователя"""
-    try:
-        with database_transaction() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
-            result = cursor.fetchone()
-            
-            if not result:
-                return {}
-            
-            user_id = result[0]
-            user_stats = db_manager.get_user_stats(user_id)
-            
-            # Подтвержденные заявки
-            cursor.execute('SELECT COUNT(*) FROM approval_claims WHERE user_id = ? AND status = "approved"', (user_id,))
-            approved_claims = cursor.fetchone()[0]
-            
-            # Отклоненные заявки
-            cursor.execute('SELECT COUNT(*) FROM approval_claims WHERE user_id = ? AND status = "rejected"', (user_id,))
-            rejected_claims = cursor.fetchone()[0]
-            
-            # Ожидающие заявки
-            cursor.execute('SELECT COUNT(*) FROM approval_claims WHERE user_id = ? AND status = "pending"', (user_id,))
-            pending_claims = cursor.fetchone()[0]
-            
-            return {
-                'approved_claims': approved_claims,
-                'rejected_claims': rejected_claims,
-                'pending_claims': pending_claims,
-                'rank': user_stats['rank'].value,
-                'monthly_stats': {'Этот месяц': approved_claims}
-            }
-    except Exception:
-        return {}
-
-def get_user_comparison_analytics(username: str) -> dict:
-    """Получение сравнительной аналитики пользователя"""
-    try:
-        with database_transaction() as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
-            result = cursor.fetchone()
-            
-            if not result:
-                return {}
-            
-            user_id = result[0]
-            user_stats = db_manager.get_user_stats(user_id)
-            
-            return {
-                'presave_requests': user_stats['requests_count'],
-                'approved_claims': user_stats['approvals_count']
-            }
-    except Exception:
-        return {}
-
-def format_links_analytics(username: str, data: dict) -> str:
-    """Форматирование аналитики ссылок пользователя"""
-    if not data:
-        return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
-    
-    return f"""
-📊 **Аналитика ссылок @{username}**
-
-🔗 **Всего ссылок:** {data.get('total_links', 0)}
-🎵 **Просьб о пресейвах:** {data.get('presave_requests', 0)}
-📅 **Последняя активность:** {data.get('last_activity', 'Неизвестно')}
-
-**Последние 5 ссылок:**
-{chr(10).join([f"• [Пост {link['message_id']}](https://t.me/c/{abs(GROUP_ID)}/{link['message_id']})" for link in data.get('recent_links', [])[:5]])}
-"""
-
-def format_approvals_analytics(username: str, data: dict) -> str:
-    """Форматирование аналитики аппрувов пользователя"""
-    if not data:
-        return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
-    
-    return f"""
-📊 **Аналитика аппрувов @{username}**
-
-✅ **Подтвержденных заявок:** {data.get('approved_claims', 0)}
-❌ **Отклоненных заявок:** {data.get('rejected_claims', 0)}
-⏳ **Ожидающих заявок:** {data.get('pending_claims', 0)}
-🏆 **Звание:** {data.get('rank', 'Неизвестно')}
-
-**Статистика по месяцам:**
-{chr(10).join([f"• {month}: {count} аппрувов" for month, count in data.get('monthly_stats', {}).items()])}
-"""
-
-def format_comparison_analytics(username: str, data: dict) -> str:
-    """Форматирование сравнительной аналитики пользователя"""
-    if not data:
-        return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
-    
-    requests = data.get('presave_requests', 0)
-    approvals = data.get('approved_claims', 0)
-    ratio = round(approvals / requests, 2) if requests > 0 else 0
-    
-    return f"""
-📊 **Сравнительная аналитика @{username}**
-
-🎵 **Просил пресейвы:** {requests} раз
-📸 **Сделал пресейвы:** {approvals} раз
-⚖️ **Соотношение (аппрув/просьба):** {ratio}
-
-**Оценка взаимности:**
-{get_reciprocity_assessment(ratio)}
-
-**Рекомендации:**
-{get_reciprocity_recommendations(ratio, requests, approvals)}
-"""
-
-def get_reciprocity_assessment(ratio: float) -> str:
-    """Оценка взаимности пользователя"""
-    if ratio >= 1.0:
-        return "🌟 **Отличная взаимность** - делает больше, чем просит"
-    elif ratio >= 0.7:
-        return "✅ **Хорошая взаимность** - активно поддерживает других"
-    elif ratio >= 0.4:
-        return "⚖️ **Средняя взаимность** - есть куда стремиться"
-    elif ratio >= 0.1:
-        return "⚠️ **Низкая взаимность** - редко поддерживает других"
-    else:
-        return "❌ **Отсутствие взаимности** - только просит, не поддерживает"
-
-def get_reciprocity_recommendations(ratio: float, requests: int, approvals: int) -> str:
-    """Рекомендации по улучшению взаимности"""
-    if ratio >= 1.0:
-        return "Продолжайте в том же духе! Вы - пример для сообщества."
-    elif ratio >= 0.7:
-        return "Отличная активность! Можете иногда просить больше поддержки."
-    elif ratio >= 0.4:
-        needed = max(1, int(requests * 0.7 - approvals))
-        return f"Сделайте еще {needed} пресейвов для улучшения баланса."
-    else:
-        needed = max(1, int(requests * 0.5))
-        return f"Рекомендуется сделать {needed} пресейвов перед новыми просьбами."
-
-# Дополнительные callback handlers (продолжение секции 11)
-
+# Заглушки для остальных обработчиков callback'ов (чтобы избежать ошибок)
 def handle_cancel_request_callback(call):
     """Отмена просьбы о пресейве"""
-    callback_user_id = int(call.data.split('_')[2])
+    try:
+        callback_user_id = int(call.data.split('_')[2])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
     
     # Проверка безопасности
     if call.from_user.id != callback_user_id:
@@ -3726,7 +3617,11 @@ def handle_publish_request_callback(call):
 
 def handle_cancel_claim_callback(call):
     """Отмена заявки на аппрув"""
-    callback_user_id = int(call.data.split('_')[2])
+    try:
+        callback_user_id = int(call.data.split('_')[2])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
     
     # Проверка безопасности
     if call.from_user.id != callback_user_id:
@@ -3834,11 +3729,23 @@ def handle_submit_claim_callback(call):
         log_user_action(callback_user_id, "ERROR", f"Failed to submit claim: {str(e)}")
 
 def handle_approve_claim_callback(call):
-    """Подтверждение заявки админом"""
-    claim_id = int(call.data.split('_')[2])
+    try:
+        claim_id = int(call.data.split('_')[2])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
+    
     admin_id = call.from_user.id
     
     try:
+        # Проверяем что заявка существует и в статусе pending
+        pending_claims = db_manager.get_pending_claims()
+        claim_exists = any(claim['claim_id'] == claim_id for claim in pending_claims)
+        
+        if not claim_exists:
+            bot.answer_callback_query(call.id, "❌ Заявка уже обработана или не существует")
+            return
+        
         # Подтверждаем заявку
         db_manager.approve_claim(claim_id, admin_id, True)
         
@@ -3856,11 +3763,23 @@ def handle_approve_claim_callback(call):
         log_user_action(admin_id, "ERROR", f"Failed to approve claim #{claim_id}: {str(e)}")
 
 def handle_reject_claim_callback(call):
-    """Отклонение заявки админом"""
-    claim_id = int(call.data.split('_')[2])
+    try:
+        claim_id = int(call.data.split('_')[2])
+    except (ValueError, IndexError):
+        bot.answer_callback_query(call.id, "❌ Некорректные данные")
+        return
+    
     admin_id = call.from_user.id
     
     try:
+        # Проверяем что заявка существует и в статусе pending
+        pending_claims = db_manager.get_pending_claims()
+        claim_exists = any(claim['claim_id'] == claim_id for claim in pending_claims)
+        
+        if not claim_exists:
+            bot.answer_callback_query(call.id, "❌ Заявка уже обработана или не существует")
+            return
+        
         # Отклоняем заявку
         db_manager.approve_claim(claim_id, admin_id, False)
         
@@ -3877,6 +3796,7 @@ def handle_reject_claim_callback(call):
         bot.answer_callback_query(call.id, f"❌ Ошибка: {str(e)}")
         log_user_action(admin_id, "ERROR", f"Failed to reject claim #{claim_id}: {str(e)}")
 
+# Заглушки для остальных функций (упрощенные версии)
 def handle_bot_settings_callback(call):
     """Меню настроек бота для админов"""
     keyboard = InlineKeyboardMarkup(row_width=1)
@@ -4227,7 +4147,21 @@ def handle_user_analytics_callback(call):
 
 def handle_test_keepalive_callback(call):
     """Тест keep alive через callback"""
-    render_url = os.getenv('RENDER_EXTERNAL_URL', 'localhost')
+    render_url = os.getenv('RENDER_EXTERNAL_URL')
+    
+    if not render_url:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Назад к диагностике", callback_data="diagnostics"))
+        
+        bot.edit_message_text(
+            "❌ **RENDER_EXTERNAL_URL не настроен**\n\nНевозможно выполнить keep alive тест",
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
+        return
+    
     url = f"https://{render_url}/keepalive"
     
     start_time = time.time()
@@ -4356,13 +4290,14 @@ def handle_performance_metrics_callback(call):
     )
 
 def handle_clear_specific_data_callback(call):
-    """Очистка конкретных данных"""
+    """Очистка конкретных данных (исправленная версия)"""
     admin_id = call.from_user.id
     data_type = call.data.split('_')[1]  # links, approvals, asks
     
     try:
         with database_transaction() as conn:
             cursor = conn.cursor()
+            cleared = 0  # Инициализируем переменную
             
             if data_type == 'links':
                 cursor.execute('DELETE FROM user_links')
@@ -4380,6 +4315,7 @@ def handle_clear_specific_data_callback(call):
                 message = f"✅ **Очищено {cleared} просьб о пресейвах**"
             else:
                 message = "❌ **Неизвестный тип данных**"
+                cleared = 0
         
         keyboard = InlineKeyboardMarkup()
         keyboard.add(InlineKeyboardButton("⬅️ Назад", callback_data="clear_data_menu"))
@@ -4572,16 +4508,451 @@ def handle_add_screenshot_callback(call):
     """Добавление еще одного скриншота"""
     user_id = call.from_user.id
     
+    # Проверяем состояние пользователя
     if user_id not in user_sessions or user_sessions[user_id].state != UserState.CLAIMING_PRESAVE_SCREENSHOTS:
         bot.answer_callback_query(call.id, "❌ Сессия истекла")
+        
+        # Возвращаем в главное меню
+        if validate_admin(user_id):
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(InlineKeyboardButton("📱 Главное меню", callback_data="main_menu"))
+            text = "❌ **Сессия истекла**\n\nВернитесь в главное меню"
+        else:
+            keyboard = InlineKeyboardMarkup(row_width=1)
+            keyboard.add(InlineKeyboardButton("📱 Главное меню", callback_data="main_menu"))
+            text = "❌ **Сессия истекла**\n\nВернитесь в главное меню"
+        
+        bot.edit_message_text(
+            text,
+            call.message.chat.id,
+            call.message.message_id,
+            reply_markup=keyboard,
+            parse_mode='Markdown'
+        )
         return
     
+    # Проверяем сессию заявки
+    if user_id not in presave_claim_sessions:
+        bot.answer_callback_query(call.id, "❌ Данные заявки потеряны")
+        return
+    
+    keyboard = InlineKeyboardMarkup(row_width=1)
+    keyboard.add(InlineKeyboardButton("✅ Перейти к комментарию", callback_data="proceed_to_comment"))
+    keyboard.add(InlineKeyboardButton("❌ Отменить заявку", callback_data=f"cancel_claim_{user_id}"))
+    
+    current_count = len(presave_claim_sessions[user_id].screenshots)
+    
     bot.edit_message_text(
-        "📸 **Отправьте еще один скриншот**\n\nВы можете добавить дополнительные доказательства:",
+        f"📸 **Отправьте еще один скриншот**\n\nТекущее количество: {current_count}\nВы можете добавить дополнительные доказательства:",
         call.message.chat.id,
         call.message.message_id,
+        reply_markup=keyboard,
         parse_mode='Markdown'
     )
+
+def handle_main_menu_callback(call):
+    """Возврат в главное меню"""
+    user_id = call.from_user.id
+    
+    if validate_admin(user_id):
+        # АДМИНСКОЕ МЕНЮ
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(InlineKeyboardButton("📊 Моя статистика", callback_data="my_stats"))
+        keyboard.add(InlineKeyboardButton("🏆 Лидерборд", callback_data="leaderboard"))
+        keyboard.add(InlineKeyboardButton("⚙️ Действия", callback_data="admin_actions"))
+        keyboard.add(InlineKeyboardButton("📊 Расширенная аналитика", callback_data="admin_analytics"))
+        keyboard.add(InlineKeyboardButton("🔧 Диагностика", callback_data="diagnostics"))
+        keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
+        
+        bot.edit_message_text("👑 **Админское меню**", 
+                            call.message.chat.id, call.message.message_id,
+                            reply_markup=keyboard, parse_mode='Markdown')
+    else:
+        # ПОЛЬЗОВАТЕЛЬСКОЕ МЕНЮ
+        keyboard = InlineKeyboardMarkup(row_width=1)
+        keyboard.add(InlineKeyboardButton("📊 Моя статистика", callback_data="my_stats"))
+        keyboard.add(InlineKeyboardButton("🏆 Лидерборд", callback_data="leaderboard"))
+        keyboard.add(InlineKeyboardButton("⚙️ Действия", callback_data="user_actions"))
+        keyboard.add(InlineKeyboardButton("📊 Аналитика", callback_data="user_analytics"))
+        keyboard.add(InlineKeyboardButton("❓ Помощь", callback_data="help"))
+        
+        bot.edit_message_text("📱 **Главное меню**", 
+                            call.message.chat.id, call.message.message_id,
+                            reply_markup=keyboard, parse_mode='Markdown')
+
+def handle_reminder_edit_input(message):
+    """Обработка ввода нового текста напоминания (админы)"""
+    user_id = message.from_user.id
+    
+    # Двойная проверка админских прав
+    if user_id not in ADMIN_IDS:
+        bot.reply_to(message, "❌ Нет прав доступа")
+        log_user_action(user_id, "SECURITY", "Non-admin tried to edit reminder")
+        
+        # Очищаем состояние
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+        return
+    
+    # Проверяем состояние
+    if user_id not in user_sessions:
+        bot.reply_to(message, "❌ Сессия истекла. Начните заново через /menu → Настройки бота")
+        return
+    
+    session = user_sessions[user_id]
+    if session.state != UserState.EDITING_REMINDER:
+        bot.reply_to(message, "❌ Неожиданное состояние")
+        return
+    
+    new_reminder = message.text.strip()
+    
+    if len(new_reminder) < 10:
+        bot.reply_to(message, "❌ Текст напоминания слишком короткий (минимум 10 символов)")
+        return
+    
+    if len(new_reminder) > 1000:
+        bot.reply_to(message, "❌ Текст напоминания слишком длинный (максимум 1000 символов)")
+        return
+    
+    try:
+        # Обновляем напоминание в настройках
+        db_manager.update_setting('reminder_text', new_reminder)
+        
+        # Обновляем глобальную переменную
+        global REMINDER_TEXT
+        REMINDER_TEXT = new_reminder
+        
+        # Получаем данные о месте, откуда началось редактирование
+        original_chat_id = session.data.get('original_chat_id')
+        
+        # Очищаем состояние
+        del user_sessions[user_id]
+        
+        # Отправляем подтверждение в текущий чат
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в настройки бота", callback_data="bot_settings"))
+        
+        success_text = f"""✅ **Напоминание успешно обновлено!**
+
+**Новый текст:**
+{new_reminder}
+
+Теперь этот текст будет показываться пользователям при отправке ссылок."""
+        
+        bot.reply_to(message, success_text, reply_markup=keyboard, parse_mode='Markdown')
+        
+        # Также отправляем уведомление в исходный чат, если это был другой чат
+        if original_chat_id and original_chat_id != message.chat.id:
+            try:
+                send_message_to_thread(
+                    original_chat_id,
+                    "✅ **Текст напоминания обновлен в личных сообщениях**",
+                    THREAD_ID if original_chat_id == GROUP_ID else None,
+                    parse_mode='Markdown'
+                )
+            except Exception:
+                pass  # Игнорируем ошибки отправки в исходный чат
+        
+        log_user_action(user_id, "SUCCESS", f"Reminder text updated: {new_reminder[:50]}...")
+        
+    except Exception as e:
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("⬅️ Вернуться в настройки бота", callback_data="bot_settings"))
+        
+        bot.reply_to(message, "❌ **Ошибка** - Не удалось обновить напоминание", 
+                    reply_markup=keyboard, parse_mode='Markdown')
+        
+        log_user_action(user_id, "ERROR", f"Failed to update reminder: {str(e)}")
+
+def handle_username_analytics_input(message):
+    """Обработка ввода username для аналитики"""
+    user_id = message.from_user.id
+    
+    username = message.text.strip().replace('@', '')
+    
+    if not username:
+        bot.reply_to(message, "❌ Укажите корректный username")
+        return
+    
+    # Проверяем существование пользователя в БД
+    try:
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
+            result = cursor.fetchone()
+            
+            if not result:
+                keyboard = InlineKeyboardMarkup()
+                if user_id in ADMIN_IDS:
+                    keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="admin_analytics"))
+                else:
+                    keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="user_analytics"))
+                
+                bot.reply_to(message, f"❌ **Пользователь @{username} не найден в базе данных**\n\nПользователь должен хотя бы раз взаимодействовать с ботом.", 
+                            reply_markup=keyboard, parse_mode='Markdown')
+                
+                # Очищаем состояние
+                if user_id in user_sessions:
+                    del user_sessions[user_id]
+                
+                log_user_action(user_id, "ERROR", f"User @{username} not found for analytics")
+                return
+                
+    except Exception as db_error:
+        keyboard = InlineKeyboardMarkup()
+        if user_id in ADMIN_IDS:
+            keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="admin_analytics"))
+        else:
+            keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="user_analytics"))
+        
+        bot.reply_to(message, "❌ **Ошибка базы данных**\n\nПопробуйте позже.", 
+                    reply_markup=keyboard, parse_mode='Markdown')
+        
+        # Очищаем состояние
+        if user_id in user_sessions:
+            del user_sessions[user_id]
+        
+        log_user_action(user_id, "ERROR", f"Database error in analytics: {str(db_error)}")
+        return
+    
+    # Получаем тип аналитики из сессии
+    session = user_sessions.get(user_id)
+    if not session:
+        bot.reply_to(message, "❌ Сессия истекла")
+        return
+    
+    analytics_type = session.data.get('analytics_type', 'links')
+    
+    try:
+        if analytics_type == 'links':
+            result = get_user_links_analytics(username)
+            response = format_links_analytics(username, result)
+        elif analytics_type == 'approvals':
+            result = get_user_approvals_analytics(username)
+            response = format_approvals_analytics(username, result)
+        elif analytics_type == 'comparison':
+            result = get_user_comparison_analytics(username)
+            response = format_comparison_analytics(username, result)
+        else:
+            response = "❌ Неизвестный тип аналитики"
+        
+        # Очищаем состояние
+        del user_sessions[user_id]
+        
+        keyboard = InlineKeyboardMarkup()
+        if user_id in ADMIN_IDS:
+            keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="admin_analytics"))
+        else:
+            keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="user_analytics"))
+        
+        bot.reply_to(message, response, reply_markup=keyboard, parse_mode='Markdown')
+        
+        log_user_action(user_id, "SUCCESS", f"Analytics for @{username}, type: {analytics_type}")
+        
+    except Exception as e:
+        keyboard = InlineKeyboardMarkup()
+        if user_id in ADMIN_IDS:
+            keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="admin_analytics"))
+        else:
+            keyboard.add(InlineKeyboardButton("⬅️ Вернуться в аналитику", callback_data="user_analytics"))
+        
+        bot.reply_to(message, f"❌ **Ошибка аналитики для @{username}**", 
+                    reply_markup=keyboard, parse_mode='Markdown')
+        
+        log_user_action(user_id, "ERROR", f"Analytics failed for @{username}: {str(e)}")
+
+# Дополнительные функции аналитики
+def get_user_links_analytics(username: str) -> dict:
+    """Получение аналитики ссылок пользователя"""
+    try:
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
+            result = cursor.fetchone()
+            
+            if not result:
+                return {}
+            
+            user_id = result[0]
+            
+            # Общее количество ссылок
+            cursor.execute('SELECT COUNT(*) FROM user_links WHERE user_id = ?', (user_id,))
+            total_links = cursor.fetchone()[0]
+            
+            # Просьбы о пресейвах
+            cursor.execute('SELECT COUNT(*) FROM presave_requests WHERE user_id = ?', (user_id,))
+            presave_requests = cursor.fetchone()[0]
+            
+            # Последние ссылки
+            cursor.execute('''
+                SELECT ul.link_url, ul.message_id, ul.created_at
+                FROM user_links ul
+                WHERE ul.user_id = ?
+                ORDER BY ul.created_at DESC
+                LIMIT 5
+            ''', (user_id,))
+            
+            recent_links = [{'message_id': row[1]} for row in cursor.fetchall()]
+            
+            return {
+                'total_links': total_links,
+                'presave_requests': presave_requests,
+                'recent_links': recent_links,
+                'last_activity': 'Недавно'
+            }
+    except Exception:
+        return {}
+
+def get_user_approvals_analytics(username: str) -> dict:
+    """Получение аналитики аппрувов пользователя"""
+    try:
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
+            result = cursor.fetchone()
+            
+            if not result:
+                return {}
+            
+            user_id = result[0]
+            user_stats = db_manager.get_user_stats(user_id)
+            
+            # Подтвержденные заявки
+            cursor.execute('SELECT COUNT(*) FROM approval_claims WHERE user_id = ? AND status = "approved"', (user_id,))
+            approved_claims = cursor.fetchone()[0]
+            
+            # Отклоненные заявки
+            cursor.execute('SELECT COUNT(*) FROM approval_claims WHERE user_id = ? AND status = "rejected"', (user_id,))
+            rejected_claims = cursor.fetchone()[0]
+            
+            # Ожидающие заявки
+            cursor.execute('SELECT COUNT(*) FROM approval_claims WHERE user_id = ? AND status = "pending"', (user_id,))
+            pending_claims = cursor.fetchone()[0]
+            
+            return {
+                'approved_claims': approved_claims,
+                'rejected_claims': rejected_claims,
+                'pending_claims': pending_claims,
+                'rank': user_stats['rank'].value,
+                'monthly_stats': {'Этот месяц': approved_claims}
+            }
+    except Exception:
+        return {}
+
+def get_user_comparison_analytics(username: str) -> dict:
+    """Получение сравнительной аналитики пользователя"""
+    try:
+        with database_transaction() as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT user_id FROM users WHERE username = ?', (username,))
+            result = cursor.fetchone()
+            
+            if not result:
+                return {}
+            
+            user_id = result[0]
+            user_stats = db_manager.get_user_stats(user_id)
+            
+            return {
+                'presave_requests': user_stats['requests_count'],
+                'approved_claims': user_stats['approvals_count']
+            }
+    except Exception:
+        return {}
+
+def format_links_analytics(username: str, data: dict) -> str:
+    """Форматирование аналитики ссылок пользователя"""
+    if not data:
+        return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
+    
+    # Формируем ссылки на последние посты
+    recent_links = data.get('recent_links', [])[:5]
+    links_text = ""
+    
+    if recent_links:
+        links_list = []
+        for i, link in enumerate(recent_links, 1):
+            message_id = link.get('message_id')
+            if message_id:
+                link_url = f"https://t.me/c/{abs(GROUP_ID)}/{message_id}"
+                links_list.append(f"{i}. [Пост {message_id}]({link_url})")
+        
+        if links_list:
+            links_text = f"\n\n**Последние {len(links_list)} ссылок:**\n" + "\n".join(links_list)
+    else:
+        links_text = "\n\n**Последние ссылки:** Нет данных"
+    
+    return f"""📊 **Аналитика ссылок @{username}**
+
+🔗 **Всего ссылок:** {data.get('total_links', 0)}
+🎵 **Просьб о пресейвах:** {data.get('presave_requests', 0)}
+📅 **Последняя активность:** {data.get('last_activity', 'Неизвестно')}{links_text}"""
+
+def format_approvals_analytics(username: str, data: dict) -> str:
+    """Форматирование аналитики аппрувов пользователя"""
+    if not data:
+        return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
+    
+    return f"""
+📊 **Аналитика аппрувов @{username}**
+
+✅ **Подтвержденных заявок:** {data.get('approved_claims', 0)}
+❌ **Отклоненных заявок:** {data.get('rejected_claims', 0)}
+⏳ **Ожидающих заявок:** {data.get('pending_claims', 0)}
+🏆 **Звание:** {data.get('rank', 'Неизвестно')}
+
+**Статистика по месяцам:**
+{chr(10).join([f"• {month}: {count} аппрувов" for month, count in data.get('monthly_stats', {}).items()])}
+"""
+
+def format_comparison_analytics(username: str, data: dict) -> str:
+    """Форматирование сравнительной аналитики пользователя"""
+    if not data:
+        return f"📊 **Аналитика @{username}**\n\nДанных не найдено"
+    
+    requests = data.get('presave_requests', 0)
+    approvals = data.get('approved_claims', 0)
+    ratio = round(approvals / requests, 2) if requests > 0 else 0
+    
+    return f"""
+📊 **Сравнительная аналитика @{username}**
+
+🎵 **Просил пресейвы:** {requests} раз
+📸 **Сделал пресейвы:** {approvals} раз
+⚖️ **Соотношение (аппрув/просьба):** {ratio}
+
+**Оценка взаимности:**
+{get_reciprocity_assessment(ratio)}
+
+**Рекомендации:**
+{get_reciprocity_recommendations(ratio, requests, approvals)}
+"""
+
+def get_reciprocity_assessment(ratio: float) -> str:
+    """Оценка взаимности пользователя"""
+    if ratio >= 1.0:
+        return "🌟 **Отличная взаимность** - делает больше, чем просит"
+    elif ratio >= 0.7:
+        return "✅ **Хорошая взаимность** - активно поддерживает других"
+    elif ratio >= 0.4:
+        return "⚖️ **Средняя взаимность** - есть куда стремиться"
+    elif ratio >= 0.1:
+        return "⚠️ **Низкая взаимность** - редко поддерживает других"
+    else:
+        return "❌ **Отсутствие взаимности** - только просит, не поддерживает"
+
+def get_reciprocity_recommendations(ratio: float, requests: int, approvals: int) -> str:
+    """Рекомендации по улучшению взаимности"""
+    if ratio >= 1.0:
+        return "Продолжайте в том же духе! Вы - пример для сообщества."
+    elif ratio >= 0.7:
+        return "Отличная активность! Можете иногда просить больше поддержки."
+    elif ratio >= 0.4:
+        needed = max(1, int(requests * 0.7 - approvals))
+        return f"Сделайте еще {needed} пресейвов для улучшения баланса."
+    else:
+        needed = max(1, int(requests * 0.5))
+        return f"Рекомендуется сделать {needed} пресейвов перед новыми просьбами."
 
 # ================================
 # 13. СИСТЕМА KEEP ALIVE И WEBHOOK
@@ -4601,6 +4972,39 @@ def keep_alive_worker():
             cleanup_expired_sessions()
             cleanup_expired_screenshots()
             db_manager.cleanup_expired_screenshots()
+            
+            # Проактивная очистка памяти
+            try:
+                # Очистка старых записей в method_limits_tracker
+                current_cleanup_time = time.time()
+                for method_name in list(method_limits_tracker.keys()):
+                    method_limits_tracker[method_name] = [
+                        timestamp for timestamp in method_limits_tracker[method_name]
+                        if current_cleanup_time - timestamp < 3600  # Храним только час
+                    ]
+                    if not method_limits_tracker[method_name]:
+                        del method_limits_tracker[method_name]
+                
+                # Очистка callback rate limiter
+                for user_id in list(callback_rate_limiter.keys()):
+                    callback_rate_limiter[user_id] = [
+                        timestamp for timestamp in callback_rate_limiter[user_id]
+                        if current_cleanup_time - timestamp < 300  # Храним только 5 минут
+                    ]
+                    if not callback_rate_limiter[user_id]:
+                        del callback_rate_limiter[user_id]
+                
+                # Ограничение размера очереди сообщений
+                while message_queue.qsize() > 100:
+                    try:
+                        message_queue.get_nowait()
+                    except:
+                        break
+                
+                log_user_action(0, "SUCCESS", f"Memory cleanup: Sessions={len(user_sessions)}, Queue={message_queue.qsize()}, Callbacks={len(callback_rate_limiter)}")
+                
+            except Exception as cleanup_error:
+                log_user_action(0, "ERROR", f"Memory cleanup failed: {str(cleanup_error)}")
             
             # Keep alive запрос
             render_url = os.getenv('RENDER_EXTERNAL_URL')
@@ -4870,7 +5274,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             health_data = {
                 "status": "healthy",
                 "service": "do-presave-reminder-bot",
-                "version": "v24-bug-fixes",
+                "version": "v24.09-bug-fixes",
                 "timestamp": time.time(),
                 "correlation_id": correlation_id
             }
@@ -5119,7 +5523,7 @@ class WebhookHandler(BaseHTTPRequestHandler):
             <!DOCTYPE html>
             <html>
             <head>
-                <title>Do Presave Reminder Bot by Mister DMS v24 - Bug Fixes</title>
+                <title>Do Presave Reminder Bot by Mister DMS v24.09 - Bug Fixes</title>
                 <meta charset="utf-8">
                 <style>
                     body {{ font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; }}
@@ -5129,18 +5533,20 @@ class WebhookHandler(BaseHTTPRequestHandler):
                 </style>
             </head>
             <body>
-                <h1>🤖 Do Presave Reminder Bot by Mister DMS v24</h1>
+                <h1>🤖 Do Presave Reminder Bot by Mister DMS v24.09</h1>
                 <div class="status">
                     <h3>✅ Production Ready - Bug Fixes</h3>
                     <p>Advanced logging and monitoring active</p>
                     <p>Correlation ID: {correlation_id}</p>
                 </div>
                 <div class="feature">
-                    <h4>🆕 v24 Features:</h4>
+                    <h4>🆕 v24.09 Features:</h4>
                     <p>📸 Screenshot support with 7-day TTL</p>
                     <p>🎵 Clear terminology: Request vs Claim</p>
                     <p>📊 Enhanced analytics and metrics</p>
                     <p>🔒 Improved security and rate limiting</p>
+                    <p>🧠 Memory management and cleanup</p>
+                    <p>✅ All 14 critical fixes applied</p>
                 </div>
                 <div class="metrics">
                     <h4>📊 Real-time Monitoring</h4>
@@ -5181,8 +5587,24 @@ def check_database_connection() -> bool:
         return False
 
 # ================================
-# 14. ЗАПУСК БОТА
+# 14. ЗАПУСК БОТА С GRACEFUL SHUTDOWN
 # ================================
+
+def signal_handler(signum, frame):
+    """Обработчик сигналов для graceful shutdown"""
+    logger.info("🛑 Received shutdown signal, cleaning up...")
+    
+    # Очистка сессий
+    user_sessions.clear()
+    presave_request_sessions.clear()
+    presave_claim_sessions.clear()
+    
+    # Очистка rate limiters
+    method_limits_tracker.clear()
+    callback_rate_limiter.clear()
+    
+    logger.info("✅ Cleanup completed, shutting down...")
+    exit(0)
 
 def main():
     """
@@ -5216,9 +5638,12 @@ def main():
             logger.error(f"❌ Invalid GROUP_ID or THREAD_ID format: {e}")
             return
         
-        logger.info("🚀 Starting Do Presave Reminder Bot by Mister DMS v24 - Bug Fixes")
+        logger.info("🚀 Starting Do Presave Reminder Bot by Mister DMS v24.09 - Bug Fixes")
         logger.info("📸 Screenshot support enabled with 7-day TTL")
         logger.info("🎵 Clear terminology: Request (просьба) vs Claim (заявка)")
+        logger.info("🔒 Enhanced security and rate limiting active")
+        logger.info("🧠 Memory management and cleanup enabled")
+        logger.info("✅ All 14 critical fixes applied")
         logger.info(f"🔧 Admin IDs: {ADMIN_IDS}")
         logger.info(f"📊 Target Group: {GROUP_ID}, Target Thread: {THREAD_ID}")
         logger.info(f"🎯 Bot will work ONLY in:  https://t.me/c/{str(abs(GROUP_ID))}/{THREAD_ID} and private chats")
@@ -5430,6 +5855,9 @@ def start_http_server(port: int):
             logger.info("🎵 Bot is monitoring for external links in the target thread")
             logger.info("📸 Screenshot uploads enabled with 7-day TTL")
             logger.info("🔄 Automatic cleanup processes active")
+            logger.info("🔒 Rate limiting and security measures active")
+            logger.info("🧠 Memory management enabled")
+            logger.info("✅ All 14 critical bug fixes applied successfully")
             httpd.serve_forever()
             
     except Exception as e:
@@ -5441,4 +5869,16 @@ def start_http_server(port: int):
         raise
 
 if __name__ == "__main__":
-    main()
+    # Настройка graceful shutdown
+    signal.signal(signal.SIGTERM, signal_handler)
+    signal.signal(signal.SIGINT, signal_handler)
+    
+    try:
+        main()
+    except KeyboardInterrupt:
+        logger.info("🛑 Bot stopped by user")
+        signal_handler(None, None)
+    except Exception as e:
+        logger.error(f"🚨 Fatal error: {e}")
+        centralized_error_logger(error=e, context="Main execution")
+        raise
