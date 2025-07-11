@@ -4025,28 +4025,69 @@ def main():
         
         # Установка webhook
         render_url = os.getenv('RENDER_EXTERNAL_URL')
+        port = int(os.getenv('PORT', 5000))
+
         if not render_url:
-            logger.error("❌ RENDER_EXTERNAL_URL not set")
-            return
-        
+            # Попытка автоматического определения URL для Render.com
+            service_name = os.getenv('RENDER_SERVICE_NAME')
+            if service_name:
+                render_url = f"{service_name}.onrender.com"
+                logger.info(f"🔧 Auto-detected Render URL: {render_url}")
+            else:
+                logger.error("❌ RENDER_EXTERNAL_URL не установлен и не удалось автоматически определить URL")
+                logger.error("📝 Установите переменную окружения RENDER_EXTERNAL_URL в Render Dashboard")
+                logger.error("💡 Пример: your-service-name.onrender.com")
+                
+                # Fallback на polling mode для локальной разработки
+                logger.info("🔄 Переключаемся на polling mode...")
+                start_polling_mode()
+                return
+
         webhook_url = f"https://{render_url}/{BOT_TOKEN}"
+
+        # Валидация webhook URL
+        if not webhook_url.startswith('https://'):
+            logger.error("❌ Webhook URL must use HTTPS")
+            return
+
+        if len(webhook_url) > 2048:
+            logger.error("❌ Webhook URL too long (max 2048 characters)")
+            return
+
+        # Проверка доступности URL (опционально)
+        try:
+            import urllib.request
+            urllib.request.urlopen(f"https://{render_url}/health", timeout=5)
+            logger.info("✅ Service URL is accessible")
+        except Exception as url_check_error:
+            logger.warning(f"⚠️ Could not verify URL accessibility: {url_check_error}")
+            logger.warning("🔄 Proceeding with webhook setup anyway...")
         
         try:
+            logger.info(f"🔧 Setting up webhook: {webhook_url}")
+            logger.info(f"🔑 Secret token: {'configured' if WEBHOOK_SECRET != 'your_secret' else 'not set'}")
+            
             webhook_set = bot.set_webhook(
                 webhook_url, 
                 secret_token=WEBHOOK_SECRET if WEBHOOK_SECRET != "your_secret" else None
             )
             
             if webhook_set:
-                logger.info(f"✅ Webhook set: {webhook_url}")
+                logger.info(f"✅ Webhook successfully set: {webhook_url}")
                 if WEBHOOK_SECRET != "your_secret":
                     logger.info("🔒 Secret token configured for webhook security")
             else:
-                logger.error("❌ Failed to set webhook")
+                logger.error("❌ Failed to set webhook - Telegram API returned False")
+                logger.error("💡 Check if the URL is accessible from internet")
                 return
                 
         except Exception as webhook_error:
             logger.error(f"❌ Webhook setup failed: {webhook_error}")
+            logger.error(f"🔗 Attempted URL: {webhook_url}")
+            logger.error("📝 Проверьте:")
+            logger.error("   1. RENDER_EXTERNAL_URL установлен правильно")
+            logger.error("   2. URL доступен из интернета")
+            logger.error("   3. URL использует HTTPS")
             return
         
         # Запуск фоновых процессов
@@ -4098,6 +4139,41 @@ def main():
             error=e,
             context="Bot startup"
         )
+        raise
+
+def start_polling_mode():
+    """
+    Запуск бота в режиме polling (для локальной разработки или fallback)
+    """
+    try:
+        logger.info("🔄 Starting bot in polling mode")
+        logger.info("⚠️ This mode is for development only")
+        
+        # Удаляем webhook если он был установлен
+        try:
+            bot.remove_webhook()
+            logger.info("✅ Webhook removed, switching to polling")
+        except Exception as e:
+            logger.warning(f"⚠️ Could not remove webhook: {e}")
+        
+        # Запуск keep-alive в отдельном потоке
+        keep_alive_thread = threading.Thread(target=keep_alive_worker, daemon=True)
+        keep_alive_thread.start()
+        logger.info("💓 Keep-alive worker started")
+        
+        # Стартовая очистка
+        cleanup_expired_sessions()
+        cleanup_expired_screenshots()
+        db_manager.cleanup_expired_screenshots()
+        logger.info("🧹 Initial cleanup completed")
+        
+        # Запуск polling
+        logger.info("🤖 Bot is now running in polling mode...")
+        bot.infinity_polling(timeout=10, long_polling_timeout=5)
+        
+    except Exception as e:
+        logger.error(f"🚨 Polling mode failed: {e}")
+        centralized_error_logger(error=e, context="Polling mode startup")
         raise
 
 def start_http_server(port: int):
