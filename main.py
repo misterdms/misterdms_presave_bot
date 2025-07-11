@@ -730,7 +730,11 @@ class WebhookSecurity:
     def verify_telegram_request(headers: dict, content_length: int, client_ip: str = None) -> bool:
         """Базовая проверка безопасности запроса от Telegram"""
         
-        # Проверка secret token если установлен
+        # Разрешаем health check запросы
+        if content_length == 0:
+            return True
+            
+        # Проверка secret token если установлен (это основная защита)
         if WEBHOOK_SECRET and WEBHOOK_SECRET != "your_secret":
             secret_header = headers.get('X-Telegram-Bot-Api-Secret-Token')
             if secret_header != WEBHOOK_SECRET:
@@ -740,17 +744,7 @@ class WebhookSecurity:
         if content_length > 10 * 1024 * 1024:  # 10MB лимит
             return False
         
-        # Проверка User-Agent (Telegram всегда отправляет)
-        user_agent = headers.get('User-Agent', '')
-        # Разрешаем пустые запросы для health check
-        if content_length == 0:
-            return True
-        # Разрешаем запросы от Render.com health checks
-        if client_ip == '127.0.0.1' and content_length == 0:
-            return True
-        if not user_agent or 'telegram' not in user_agent.lower():
-            return False
-        
+        # Если secret token правильный - пропускаем
         return True
 
 security = WebhookSecurity()
@@ -1103,8 +1097,8 @@ class DatabaseManager:
                     comment TEXT,
                     status TEXT DEFAULT 'pending',  -- pending, approved, rejected
                     admin_id INTEGER,  -- кто обработал
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    processed_at TIMESTAMP,
+                    created_at TEXT DEFAULT (datetime('now')),
+                    processed_at TEXT,
                     FOREIGN KEY (user_id) REFERENCES users (user_id)
                 )
             ''')
@@ -4157,6 +4151,7 @@ def main():
                 
             logger.info("⚙️ Initial settings configured")
         except Exception as settings_error:
+            log_user_action(0, "ERROR", f"Settings configuration failed: {settings_error}")
             logger.warning(f"⚠️ Settings configuration warning: {settings_error}")
         
         # Запуск HTTP сервера
