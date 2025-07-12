@@ -76,6 +76,9 @@ class DatabaseManager:
     def create_tables(self):
         """Создание всех таблиц БД"""
         try:
+            from sqlalchemy.exc import ProgrammingError
+            from psycopg2.errors import DuplicateTable
+            
             with PerformanceLogger(logger, "создание таблиц БД"):
                 Base.metadata.create_all(self.engine, checkfirst=True)
             
@@ -84,6 +87,17 @@ class DatabaseManager:
             # Инициализация базовых настроек
             self._init_default_settings()
             
+        except (ProgrammingError, DuplicateTable) as e:
+            # Обрабатываем ошибки дублирования объектов БД
+            error_str = str(e).lower()
+            if any(keyword in error_str for keyword in ["already exists", "duplicate", "существует"]):
+                logger.warning(f"⚠️ Объект БД уже существует, продолжаем работу")
+                logger.debug(f"Детали ошибки: {e}")
+                # Инициализация базовых настроек даже при существующих объектах
+                self._init_default_settings()
+            else:
+                logger.error(f"❌ Критическая ошибка создания таблиц: {e}")
+                raise
         except Exception as e:
             logger.error(f"❌ Ошибка создания таблиц: {e}")
             raise

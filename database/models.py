@@ -30,8 +30,8 @@ class User(Base):
     __tablename__ = 'users'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, unique=True, nullable=False, index=True)  # Telegram user_id
-    username = Column(String(32), nullable=True, index=True)
+    user_id = Column(Integer, unique=True, nullable=False)  # Telegram user_id
+    username = Column(String(32), nullable=True)
     first_name = Column(String(256), nullable=True)
     last_name = Column(String(256), nullable=True)
     is_admin = Column(Boolean, default=False, nullable=False)
@@ -55,6 +55,12 @@ class User(Base):
     # approval_claims = relationship("ApprovalClaim", back_populates="user")
     # ai_interactions = relationship("AIInteraction", back_populates="user")
     
+    # Индексы для производительности
+    __table_args__ = (
+        Index('idx_users_user_id', 'user_id'),
+        Index('idx_users_username', 'username'),
+    )
+    
     def __repr__(self):
         return f"<User(user_id={self.user_id}, username={self.username})>"
 
@@ -64,20 +70,26 @@ class Link(Base):
     __tablename__ = 'links'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    user_id = Column(Integer, ForeignKey('users.user_id'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.user_id'), nullable=False)
     
     # Данные ссылки
     url = Column(Text, nullable=False)
     message_text = Column(Text, nullable=True)  # Полный текст сообщения
     message_id = Column(Integer, nullable=True)  # ID сообщения в Telegram
-    thread_id = Column(Integer, nullable=True, index=True)  # ID топика
+    thread_id = Column(Integer, nullable=True)  # ID топика
     
     # Метаданные
-    created_at = Column(DateTime, default=func.now(), nullable=False, index=True)
+    created_at = Column(DateTime, default=func.now(), nullable=False)
     is_active = Column(Boolean, default=True, nullable=False)
     
     # Связи
     user = relationship("User", back_populates="links")
+    
+    # Индексы для производительности
+    __table_args__ = (
+        Index('idx_links_user_id_created', 'user_id', 'created_at'),
+        Index('idx_links_thread_id', 'thread_id'),
+    )
     
     def __repr__(self):
         return f"<Link(id={self.id}, user_id={self.user_id}, url={self.url[:50]}...)>"
@@ -88,7 +100,7 @@ class Settings(Base):
     __tablename__ = 'settings'
     
     id = Column(Integer, primary_key=True, autoincrement=True)
-    key = Column(String(100), unique=True, nullable=False, index=True)
+    key = Column(String(100), unique=True, nullable=False)
     value = Column(Text, nullable=True)
     value_type = Column(String(20), default='string', nullable=False)  # string, int, bool, json
     description = Column(Text, nullable=True)
@@ -97,6 +109,11 @@ class Settings(Base):
     created_at = Column(DateTime, default=func.now(), nullable=False)
     updated_at = Column(DateTime, default=func.now(), onupdate=func.now(), nullable=False)
     updated_by = Column(Integer, nullable=True)  # admin user_id
+    
+    # Индексы для производительности
+    __table_args__ = (
+        Index('idx_settings_key', 'key'),
+    )
     
     def __repr__(self):
         return f"<Settings(key={self.key}, value={self.value})>"
@@ -360,19 +377,18 @@ class Settings(Base):
 # ============================================
 # ИНДЕКСЫ ДЛЯ ПРОИЗВОДИТЕЛЬНОСТИ
 # ============================================
+# ВАЖНО: Индексы теперь определены внутри моделей через __table_args__
+# для правильной обработки при create_all(checkfirst=True)
 
-# Индексы для ПЛАН 1 (АКТИВНЫЕ)
-Index('idx_users_user_id', User.user_id)
-Index('idx_users_username', User.username)
-Index('idx_links_user_id_created', Link.user_id, Link.created_at)
-Index('idx_links_thread_id', Link.thread_id)
-Index('idx_settings_key', Settings.key)
+# Индексы для ПЛАН 1 перенесены в модели
+# Индексы для ПЛАН 2-4 остаются как заглушки для будущих планов
 
 # ПЛАН 2: Индексы для кармы (ЗАГЛУШКИ)
-# Index('idx_karma_user_id', UserKarma.user_id)
-# Index('idx_karma_points', UserKarma.karma_points)
-# Index('idx_karma_history_user_timestamp', KarmaHistory.user_id, KarmaHistory.timestamp)
-# Index('idx_karma_history_admin', KarmaHistory.admin_id)
+# Будут добавлены через __table_args__ в соответствующие модели при реализации ПЛАНА 2:
+# - idx_karma_user_id для UserKarma.user_id  
+# - idx_karma_points для UserKarma.karma_points
+# - idx_karma_history_user_timestamp для KarmaHistory(user_id, timestamp)
+# - idx_karma_history_admin для KarmaHistory.admin_id
 
 # ПЛАН 3: Индексы для ИИ и форм (ЗАГЛУШКИ)
 # Index('idx_presave_requests_user_status', PresaveRequest.user_id, PresaveRequest.status)
@@ -387,12 +403,16 @@ Index('idx_settings_key', Settings.key)
 def init_database_models(engine):
     """Инициализация моделей базы данных"""
     try:
-        # Создаем все таблицы с проверкой существования
+        # Создаем все таблицы и индексы с автоматической проверкой существования
+        # checkfirst=True автоматически пропускает уже существующие объекты
         Base.metadata.create_all(engine, checkfirst=True)
-        print("✅ Модели базы данных инициализированы")
+        print("✅ Модели базы данных инициализированы успешно")
         return True
     except Exception as e:
         print(f"❌ Ошибка инициализации моделей БД: {e}")
+        # Логируем детали для отладки
+        import traceback
+        print(f"Детали ошибки: {traceback.format_exc()}")
         return False
 
 
