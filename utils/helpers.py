@@ -765,8 +765,9 @@ class SystemMonitor:
 
 __all__ = [
     # Основные классы
-    'MessageFormatter', 'KeyboardBuilder', 'CommandParser', 
-    'UserHelper', 'DataHelper', 'FileHelper', 'ConfigHelper'
+    'MessageFormatter', 'KeyboardBuilder', 'ConfigHelper', 'SystemMonitor',
+    # Вспомогательные классы  
+    'CommandParser', 'UserHelper', 'DataHelper', 'FileHelper'
 ]
 
 if __name__ == "__main__":
