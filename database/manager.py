@@ -73,16 +73,27 @@ class DatabaseManager:
         finally:
             session.close()
     
-    def create_tables(self):
-        """Создание всех таблиц БД"""
+    def create_tables(self, force_recreate: bool = False):
+        """Создание всех таблиц БД с опцией принудительного пересоздания"""
         try:
             from sqlalchemy.exc import ProgrammingError
             from psycopg2.errors import DuplicateTable
+            from database.models import force_recreate_database_schema
             
-            with PerformanceLogger(logger, "создание таблиц БД"):
-                Base.metadata.create_all(self.engine, checkfirst=True)
-            
-            logger.info("✅ Все таблицы БД созданы/проверены")
+            # Если требуется принудительное пересоздание
+            if force_recreate:
+                logger.warning("🚨 ПРИНУДИТЕЛЬНОЕ ПЕРЕСОЗДАНИЕ СХЕМЫ БД!")
+                if force_recreate_database_schema(self.engine):
+                    logger.info("✅ Схема БД пересоздана успешно")
+                else:
+                    logger.error("❌ Ошибка пересоздания схемы БД")
+                    raise Exception("Не удалось пересоздать схему БД")
+            else:
+                # Обычное создание с проверкой
+                with PerformanceLogger(logger, "создание таблиц БД"):
+                    Base.metadata.create_all(self.engine, checkfirst=True)
+                
+                logger.info("✅ Все таблицы БД созданы/проверены")
             
             # Инициализация базовых настроек
             self._init_default_settings()
