@@ -392,6 +392,34 @@ def create_webhook_server(bot: telebot.TeleBot) -> WebhookServer:
     
     return server
 
+def init_webhook_server(config, bot: telebot.TeleBot) -> WebhookServer:
+    """
+    Инициализация webhook сервера с конфигурацией
+    
+    Args:
+        config: Объект конфигурации бота
+        bot: Экземпляр телеграм бота
+        
+    Returns:
+        WebhookServer: Инициализированный сервер
+    """
+    try:
+        logger.info("🌐 Инициализация webhook сервера...")
+        
+        # Создаем сервер с настройками из конфигурации
+        server = WebhookServer(
+            bot=bot,
+            webhook_secret=getattr(config, 'WEBHOOK_SECRET', None),
+            host=getattr(config, 'HOST', '0.0.0.0'),
+            port=int(os.getenv('PORT', '8080'))
+        )
+        
+        logger.info(f"✅ Webhook сервер инициализирован: {server.host}:{server.port}")
+        return server
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации webhook сервера: {e}")
+        raise
 
 if __name__ == "__main__":
     """Тестирование webhook сервера"""
