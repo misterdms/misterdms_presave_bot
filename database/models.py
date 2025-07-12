@@ -112,9 +112,6 @@ class BotSettings(Base, TimestampMixin):
     value = Column(Text, nullable=True)
     description = Column(Text, nullable=True)
     
-    # Метаданные
-    is_system = Column(Boolean, default=False, nullable=False)  # Системная настройка
-    
     def __repr__(self):
         return f"<BotSettings(key='{self.key}', value='{self.value}')>"
     
@@ -125,7 +122,6 @@ class BotSettings(Base, TimestampMixin):
             'key': self.key,
             'value': self.value,
             'description': self.description,
-            'is_system': self.is_system,
             'created_at': self.created_at.isoformat(),
             'updated_at': self.updated_at.isoformat()
         }
@@ -148,38 +144,32 @@ def create_default_settings() -> List[Dict[str, Any]]:
         {
             'key': 'bot_enabled',
             'value': 'true',
-            'description': 'Включен ли бот',
-            'is_system': True
+            'description': 'Включен ли бот'
         },
         {
             'key': 'current_limit_mode',
             'value': 'BURST',
-            'description': 'Текущий режим лимитов API',
-            'is_system': True
+            'description': 'Текущий режим лимитов API'
         },
         {
             'key': 'plan_1_enabled',
             'value': 'true', 
-            'description': 'План 1: Базовый функционал',
-            'is_system': True
+            'description': 'План 1: Базовый функционал'
         },
         {
             'key': 'plan_2_enabled',
             'value': 'false',
-            'description': 'План 2: Система кармы',
-            'is_system': True
+            'description': 'План 2: Система кармы'
         },
         {
             'key': 'plan_3_enabled',
             'value': 'false',
-            'description': 'План 3: ИИ и формы',
-            'is_system': True
+            'description': 'План 3: ИИ и формы'
         },
         {
             'key': 'plan_4_enabled',
             'value': 'false',
-            'description': 'План 4: Backup система',
-            'is_system': True
+            'description': 'План 4: Backup система'
         }
     ]
 
