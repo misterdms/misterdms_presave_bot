@@ -78,11 +78,7 @@ class DatabaseManager:
             # Scoped session для thread-safety
             self.session_factory = scoped_session(self.SessionLocal)
             
-            database_logger.logger.info(
-                "✅ Подключение к PostgreSQL установлено",
-                database_url_masked=config.DATABASE_URL.split('@')[1] if '@' in config.DATABASE_URL else 'masked',
-                pool_size=config.DB_POOL_SIZE
-            )
+            logger.info("✅ Подключение к PostgreSQL установлено")
             
         except Exception as e:
             logger.error(f"❌ Ошибка подключения к БД: {e}")
