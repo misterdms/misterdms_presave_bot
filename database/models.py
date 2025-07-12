@@ -3,10 +3,8 @@
 Простые модели БД без сложных зависимостей
 """
 
-import uuid
 from datetime import datetime, timezone
 from typing import Optional, Dict, Any, List
-from enum import Enum
 
 from sqlalchemy import Column, Integer, String, DateTime, Boolean, Text, BigInteger, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
@@ -199,32 +197,3 @@ __all__ = [
     # Вспомогательные функции
     'get_all_table_names', 'create_default_settings'
 ]
-
-# ============================================
-# ПЛАН МИГРАЦИЙ ДЛЯ БУДУЩИХ ПЛАНОВ
-# ============================================
-
-"""
-СТРАТЕГИЯ ДОБАВЛЕНИЯ МОДЕЛЕЙ ПО ПЛАНАМ:
-
-📋 ПЛАН 2 (v26) - СИСТЕМА КАРМЫ:
-- Добавим: UserKarma, KarmaHistory
-- Через: Alembic migration 001_add_karma_system.py
-- Связи: User.karma (one-to-one), User.karma_history (one-to-many)
-
-🤖 ПЛАН 3 (v27) - ИИ И ФОРМЫ:  
-- Добавим: PresaveRequest, ApprovalClaim, FormSession, AIConversation
-- Через: Alembic migration 002_add_ai_and_forms.py
-- Связи: User.presave_requests, User.ai_conversations
-
-💾 ПЛАН 4 (v27.1) - BACKUP:
-- Добавим: BackupHistory, MigrationLog
-- Через: Alembic migration 003_add_backup_system.py
-- Связи: Standalone таблицы без foreign keys
-
-ПРИНЦИПЫ:
-✅ Каждая миграция добавляет только новые таблицы
-✅ Никогда не изменяем существующие таблицы Plan 1
-✅ Обратная совместимость 100%
-✅ Можно откатиться на любой план
-"""
