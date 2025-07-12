@@ -203,25 +203,24 @@ class SecurityManager:
         # Пока разрешаем всем (в продакшене добавим Redis/memory cache)
         return True
 
-    def validate_admin(user_id: int, admin_ids: list) -> bool:
-        """
-        Простая функция валидации прав администратора
-        
-        Args:
-            user_id: ID пользователя  
-            admin_ids: Список ID администраторов
-            
-        Returns:
-            bool: True если пользователь админ
-        """
-        return user_id in admin_ids
-
     def log_security_event(self, event_type: str, user_id: int, details: str = None):
         """Логирование событий безопасности"""
         logger.warning(f"Событие безопасности: {event_type} от пользователя {user_id}"
                       + (f" | {details}" if details else ""),
                       event_type=event_type, user_id=user_id, details=details)
 
+def validate_admin(user_id: int, admin_ids: list) -> bool:
+    """
+    Простая функция валидации прав администратора
+    
+    Args:
+        user_id: ID пользователя  
+        admin_ids: Список ID администраторов
+        
+    Returns:
+        bool: True если пользователь админ
+    """
+    return user_id in admin_ids
 
 # Декораторы для проверки прав доступа
 
