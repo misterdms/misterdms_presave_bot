@@ -261,46 +261,10 @@ class PresaveBotApplication:
             return False
     
     def initialize_plan_4_features(self):
-        """Инициализация функций План 4 - Backup система"""
-        if not config.ENABLE_PLAN_4_FEATURES:
-            logger.warning("⚠️ План 4 отключен - КРИТИЧНО для PostgreSQL!")
-            return True
-            
-        global backup_manager, backup_scheduler
-        
-        try:
-            logger.info("💾 Инициализация backup системы (План 4)...")
-            
-            # Инициализация backup менеджера
-            backup_manager = init_backup_manager(database_manager)
-            logger.info("✅ BackupRestoreManager инициализирован")
-            
-            # Проверка возраста БД
-            age_days = backup_manager.get_database_age_days()
-            days_left = backup_manager.days_until_expiry()
-            
-            if days_left <= 5:
-                logger.warning(f"🚨 КРИТИЧНО! БД истечет через {days_left} дней (возраст: {age_days} дней)")
-            elif days_left <= 10:
-                logger.warning(f"⚠️ Внимание! БД истечет через {days_left} дней (возраст: {age_days} дней)")
-            else:
-                logger.info(f"✅ БД в норме: осталось {days_left} дней (возраст: {age_days} дней)")
-            
-            # Инициализация планировщика
-            backup_scheduler = init_backup_scheduler(bot)
-            logger.info("✅ BackupScheduler инициализирован")
-            
-            # Регистрация backup команд
-            register_backup_commands(bot, backup_manager)
-            logger.info("✅ Backup команды зарегистрированы")
-            
-            logger.info("🎉 План 4 (Backup система) активирован")
-            return True
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка инициализации План 4: {e}")
-            return False
-    
+        """Инициализация План 4 - Backup система (ВРЕМЕННО ОТКЛЮЧЕН!)"""
+        logger.info("⏭️ План 4 временно отключен - файлы не существуют")
+        return True
+
     def initialize_http_server(self):
         """Инициализация HTTP сервера"""
         global webhook_server
@@ -445,112 +409,63 @@ def signal_handler(signum, frame):
 # ============================================
 
 def main():
-    """Главная функция запуска приложения"""
-    
-    # Настройка логирования
-    setup_logging()
-    
-    # Вывод информации о запуске
-    logger.info("=" * 60)
-    logger.info("🎵 DO PRESAVE REMINDER BOT v25+ 🎵")
-    logger.info("Автоматизация взаимных пресейвов в музыкальном сообществе")
-    logger.info(f"Разработчик: @Mister_DMS")
-    logger.info(f"Архитектура: Модульная (4 плана развития)")
-    logger.info(f"База данных: PostgreSQL")
-    logger.info(f"Платформа: Render.com + UptimeRobot")
-    logger.info("=" * 60)
+    """Упрощенная главная функция для Plan 1"""
+    logger.info("🚀 Запуск Do Presave Reminder Bot v25 (минимальная версия)...")
     
     try:
-        # Валидация конфигурации
-        logger.info("🔧 Проверка конфигурации...")
-        logger.info(f"📊 Планы: План1=✅ План2={'✅' if config.ENABLE_PLAN_2_FEATURES else '❌'} План3={'✅' if config.ENABLE_PLAN_3_FEATURES else '❌'} План4={'✅' if config.ENABLE_PLAN_4_FEATURES else '❌'}")
-        logger.info(f"🗄️ БД: {config.DATABASE_URL.split('@')[1] if '@' in config.DATABASE_URL else 'локальная'}")
-        logger.info(f"🔗 Webhook: {'включен' if config.WEBHOOK_URL else 'отключен (polling)'}")
+        # Создание бота
+        global bot
+        bot = telebot.TeleBot(config.BOT_TOKEN, threaded=True)
+        logger.info("✅ Telegram бот создан")
         
-        # Создание приложения
-        app = PresaveBotApplication()
+        # Инициализация базы данных
+        global database_manager
+        database_manager = get_database_manager()
+        database_manager.init_database()
+        logger.info("✅ База данных инициализирована")
         
-        # Регистрация обработчиков сигналов
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
+        # Инициализация меню (единственный working модуль)
+        global menu_manager
+        menu_manager = MenuManager(bot)
+        logger.info("✅ Menu Manager инициализирован")
         
-        # Пошаговая инициализация
-        logger.info("🚀 Начинаем пошаговую инициализацию...")
+        # Простая команда /start
+        @bot.message_handler(commands=['start'])
+        def handle_start(message):
+            bot.reply_to(message, "🎵 Presave Bot запущен! Используйте /menu для доступа к функциям.")
         
-        # Шаг 1: Инициализация бота
-        if not app.initialize_bot():
-            logger.error("💥 Критическая ошибка: не удалось инициализировать бота")
-            sys.exit(1)
-        
-        # Шаг 2: Инициализация базы данных
-        if not app.initialize_database():
-            logger.error("💥 Критическая ошибка: не удалось инициализировать БД")
-            sys.exit(1)
-        
-        # Шаг 3: Инициализация основных обработчиков
-        if not app.initialize_core_handlers():
-            logger.error("💥 Критическая ошибка: не удалось инициализировать обработчики")
-            sys.exit(1)
-        
-        # Шаг 4: Инициализация План 2 (если включен)
-        if not app.initialize_plan_2_features():
-            logger.error("💥 Ошибка инициализации План 2")
-            sys.exit(1)
-        
-        # Шаг 5: Инициализация План 3 (если включен)
-        if not app.initialize_plan_3_features():
-            logger.error("💥 Ошибка инициализации План 3")
-            sys.exit(1)
-        
-        # Шаг 6: Инициализация План 4 (если включен)
-        if not app.initialize_plan_4_features():
-            logger.error("💥 Ошибка инициализации План 4")
-            sys.exit(1)
-        
-        # Шаг 7: Запуск HTTP сервера
-        if not app.initialize_http_server():
-            logger.error("💥 Критическая ошибка: не удалось запустить HTTP сервер")
-            sys.exit(1)
-        
-        # Шаг 8: Запуск keep-alive
-        if not app.initialize_keepalive():
-            logger.error("💥 Ошибка инициализации keep-alive")
-            # Не критично, продолжаем
-        
-        # Финальная проверка
-        logger.info("🏁 Все компоненты инициализированы успешно!")
-        
-        # Отправка уведомления админам
-        try:
-            for admin_id in config.ADMIN_IDS:
-                bot.send_message(
-                    admin_id,
-                    f"""🚀 **Bot started successfully!**
-                    
-📊 **Status:**
-• Version: v25+
-• Database: Connected ✅
-• Plans: {f'1✅ 2{"✅" if config.ENABLE_PLAN_2_FEATURES else "❌"} 3{"✅" if config.ENABLE_PLAN_3_FEATURES else "❌"} 4{"✅" if config.ENABLE_PLAN_4_FEATURES else "❌"}'}
-• Mode: {'Webhook' if config.WEBHOOK_URL else 'Polling'}
-
-🎯 Ready to help musicians with presaves!""",
-                    parse_mode='Markdown'
-                )
-        except Exception as e:
-            logger.warning(f"⚠️ Не удалось отправить уведомление админам: {e}")
-        
-        # Запуск основного цикла
-        logger.info("🎉 Запускаем бота! Удачных пресейвов! 🎵")
-        app.start_bot()
-        
-    except ConfigError as e:
-        logger.error(f"⚙️ Ошибка конфигурации: {e}")
-        sys.exit(1)
-    except KeyboardInterrupt:
-        logger.info("⌨️ Остановка по запросу пользователя")
+        # Настройка webhook или polling
+        if config.WEBHOOK_URL:
+            bot.set_webhook(url=config.WEBHOOK_URL, secret_token=config.WEBHOOK_SECRET)
+            logger.info(f"✅ Webhook установлен: {config.WEBHOOK_URL}")
+            
+            # Простой Flask сервер
+            from flask import Flask, request
+            app = Flask(__name__)
+            
+            @app.route(config.WEBHOOK_PATH, methods=['POST'])
+            def webhook():
+                if request.headers.get('X-Telegram-Bot-Api-Secret-Token') == config.WEBHOOK_SECRET:
+                    json_string = request.get_data().decode('utf-8')
+                    update = telebot.types.Update.de_json(json_string)
+                    bot.process_new_updates([update])
+                    return 'OK'
+                else:
+                    return 'Forbidden', 403
+            
+            @app.route('/health')
+            def health():
+                return {'status': 'ok', 'bot': 'running'}
+            
+            logger.info("🚀 Бот готов к работе!")
+            app.run(host=config.HOST, port=config.PORT)
+        else:
+            logger.info("📡 Режим polling")
+            bot.polling(none_stop=True)
+            
     except Exception as e:
-        logger.error(f"💥 Критическая ошибка: {e}")
-        sys.exit(1)
+        logger.error(f"❌ Критическая ошибка: {e}")
+        raise
 
 # ============================================
 # ТОЧКА ВХОДА
