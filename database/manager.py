@@ -32,9 +32,6 @@ from utils.logger import get_logger
 logger = get_logger(__name__)
 ```
 
-**ДОБАВИТЬ ПОСЛЕ:**
-
-```python
 # Заглушки классов Plan 2-4 для типизации
 class UserKarma: pass
 class KarmaHistory: pass
@@ -54,8 +51,11 @@ class ApprovalClaimStatus: pass
 class FormState: pass
 
 # Заглушки функций
-def get_user_rank_by_karma(karma_points): return None
-def get_karma_threshold_for_next_rank(karma): return None
+def get_user_rank_by_karma(karma_points): 
+    return None
+
+def get_karma_threshold_for_next_rank(karma): 
+    return None
 
 # Заглушка декоратора для Plan 1
 def log_database_operation(table_name: str, operation_type: str = "UNKNOWN"):
@@ -63,7 +63,6 @@ def log_database_operation(table_name: str, operation_type: str = "UNKNOWN"):
     def decorator(func):
         return func  # Просто возвращаем функцию без изменений
     return decorator
-```
 
 # Заглушка декоратора для Plan 1
 def log_database_operation(table_name: str, operation_type: str = "UNKNOWN"):
