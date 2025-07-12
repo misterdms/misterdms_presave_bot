@@ -9,12 +9,39 @@ from telebot.types import Message, CallbackQuery, InlineKeyboardMarkup
 
 from config import config
 from database.manager import get_database_manager
-from utils.security import admin_required, security_manager, AccessDeniedError
-from utils.logger import get_logger, telegram_logger
-from utils.helpers import (
-    MessageFormatter, KeyboardBuilder, UserHelper, 
-    DataHelper, ConfigHelper
-)
+from utils.security import admin_required, security_manager
+from utils.logger import get_logger
+from utils.helpers import MessageFormatter, ConfigHelper
+
+# Временные заглушки для отсутствующих классов
+class KeyboardBuilder:
+    @staticmethod
+    def create_main_menu_keyboard():
+        from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("📊 Статистика", callback_data="menu_stats"))
+        keyboard.add(InlineKeyboardButton("⚙️ Настройки", callback_data="menu_settings"))
+        return keyboard
+    
+    @staticmethod
+    def create_back_button(callback_data):
+        from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+        keyboard = InlineKeyboardMarkup()
+        keyboard.add(InlineKeyboardButton("🔙 Назад", callback_data=callback_data))
+        return keyboard
+
+class DataHelper:
+    @staticmethod
+    def format_links_list(links, max_links=10):
+        if not links:
+            return "📭 Ссылок пока нет"
+        return f"🔗 Найдено {len(links)} ссылок\n\n(детали в разработке)"
+
+# Временная заглушка для telegram_logger
+class TelegramLoggerStub:
+    def admin_action(self, *args, **kwargs): pass
+
+telegram_logger = TelegramLoggerStub()
 
 logger = get_logger(__name__)
 
