@@ -20,12 +20,6 @@ from utils.security import security_manager, ValidationError
 
 logger = get_logger(__name__)
 
-# ИСПРАВЛЕНИЕ database/manager.py - ЗАГЛУШКИ КЛАССОВ И ДЕКОРАТОРА
-
-## ДОБАВИТЬ В НАЧАЛО ФАЙЛА ПОСЛЕ ИМПОРТОВ
-
-**НАЙТИ рядом с [строка ~25 после импортов]:**
-
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
