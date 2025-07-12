@@ -28,6 +28,10 @@ psycopg2-binary==2.9.10
 # Database ORM (ОБЯЗАТЕЛЬНО)
 sqlalchemy==2.0.36
 
+# Logging and monitoring (КРИТИЧНО для utils/logger.py)
+structlog==23.2.0
+colorama==0.4.6
+
 psutil==5.9.6
 
 # ============================================
