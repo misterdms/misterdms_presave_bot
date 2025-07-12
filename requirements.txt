@@ -2,68 +2,8 @@
 # Do Presave Reminder Bot v25 - ИСПРАВЛЕННАЯ ВЕРСИЯ
 # ============================================
 
-# Telegram Bot API
 pyTelegramBotAPI==4.22.1
-
-# Environment variables
-python-dotenv==1.0.0
-
-# HTTP requests
-requests==2.32.3
-
-# Web framework для webhook
-flask==3.0.0
-
-# WSGI server для Render.com
-gunicorn==21.2.0
-
-# PostgreSQL adapter
+python-dotenv==1.0.0  
 psycopg2-binary==2.9.10
-
-# Database ORM
 sqlalchemy==2.0.36
-
-# Logging
-structlog==23.2.0
-colorama==0.4.6
-
-# System monitoring
-psutil==5.9.6
-
-# Task scheduling
-schedule==1.2.0
-
-# Date utilities
-python-dateutil==2.8.2
-
-# JSON processing
 ujson==5.8.0
-
-# НЕОБХОДИМЫЕ ДОБАВЛЕНИЯ ДЛЯ WEBHOOK И THREADING
-werkzeug==3.0.1
-
-# ============================================
-# ОТЛОЖЕННЫЕ ПАКЕТЫ
-# ============================================
-
-# Эти пакеты вызывают конфликты зависимостей:
-# - pydantic (конфликт с packaging через pydantic-core)
-# - safety (требует packaging<22.0)
-# - setuptools-scm (конфликт версий)
-# - nltk, openai, anthropic (много зависимостей)
-# - alembic (пока не нужен для простой БД)
-
-# ПЛАН: добавляем их ПОЭТАПНО после успешного deploy Plan 1
-
-# ============================================
-# DEPLOYMENT STATS
-# ============================================
-
-# Общий размер: ~60MB RAM (супер легковесно!)
-# Время установки: ~90 секунд
-# Пакетов: 11 (вместо 30+)
-# Конфликтов: 0 ✅
-# Совместимость: Python 3.11.10 + Render.com ✅
-
-# После успешного deploy и тестирования базового функционала
-# добавляем по 2-3 пакета за раз для избежания конфликтов
