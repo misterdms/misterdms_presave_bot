@@ -32,7 +32,7 @@ class CommandHandler:
         
         logger.info("CommandHandler инициализирован")
     
-    def register_handlers(self):
+    def register_handlers(self):  # ← ПРАВИЛЬНОЕ ИМЯ!
         """Регистрация всех обработчиков команд"""
         
         # ПЛАН 1: Базовые команды (АКТИВНЫЕ)
@@ -60,7 +60,18 @@ class CommandHandler:
             self.cmd_last30links,
             commands=['last30links']
         )
+
+        # Команды меню (только админы)
+        self.bot.register_message_handler(
+            self.cmd_menu,
+            commands=['menu']
+        )
         
+        self.bot.register_message_handler(
+            self.cmd_resetmenu,
+            commands=['resetmenu']
+        )
+
         # Команды управления ботом (только админы)
         self.bot.register_message_handler(
             self.cmd_enablebot,
@@ -687,6 +698,62 @@ class CommandHandler:
                 "❌ Ошибка при получении ссылок пользователя"
             )
     
+    @admin_required
+    def cmd_menu(self, message: Message):
+        """Команда /menu - главное меню администратора"""
+        try:
+            user_id = message.from_user.id
+            log_admin_action(logger, user_id, "открыл главное меню")
+            
+            # Получаем MenuHandler из main.py через ссылку
+            menu_handler = getattr(self.bot, '_menu_handler', None)
+            if menu_handler:
+                menu_handler.cmd_menu(message)
+            else:
+                # Fallback - простое меню
+                self.bot.send_message(
+                    message.chat.id,
+                    "🎵 <b>Do Presave Reminder Bot v25+</b>\n\n"
+                    "📱 Главное меню временно недоступно.\n"
+                    "Попробуйте /resetmenu",
+                    parse_mode='HTML'
+                )
+                    
+        except Exception as e:
+            logger.error(f"❌ Ошибка cmd_menu: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Ошибка открытия меню. Попробуйте /resetmenu"
+            )
+        
+    @admin_required
+    def cmd_resetmenu(self, message: Message):
+        """Команда /resetmenu - сброс меню"""
+        try:
+            user_id = message.from_user.id
+            log_admin_action(logger, user_id, "сбросил меню")
+             
+            # Получаем MenuHandler из main.py через ссылку
+            menu_handler = getattr(self.bot, '_menu_handler', None)
+            if menu_handler:
+                menu_handler.cmd_resetmenu(message)
+            else:
+                # Fallback - простой сброс
+                self.bot.send_message(
+                    message.chat.id,
+                    "🔄 <b>Меню сброшено!</b>\n\n"
+                    "Восстановление функционала...\n"
+                    "Попробуйте снова /menu",
+                    parse_mode='HTML'
+                )
+                    
+        except Exception as e:
+            logger.error(f"❌ Ошибка cmd_resetmenu: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Ошибка сброса меню. Обратитесь к разработчику."
+            )
+
     # ============================================
     # ПЛАН 2: КОМАНДЫ КАРМЫ (ЗАГЛУШКИ)
     # ============================================
