@@ -174,8 +174,14 @@ class PresaveBot:
         # Инициализация моделей БД
         init_database_models(self.db_manager.engine)
         
-        # Создание таблиц если не существуют
-        self.db_manager.create_tables()
+        # Проверяем флаг принудительного пересоздания
+        force_recreate = getattr(self.config, 'FORCE_RECREATE_TABLES', False)
+        if force_recreate:
+            logger.warning("🚨 ОБНАРУЖЕН ФЛАГ FORCE_RECREATE_TABLES=true")
+            logger.warning("🚨 ВСЕ ДАННЫЕ В БД БУДУТ УДАЛЕНЫ!")
+        
+        # Создание таблиц с учетом флага
+        self.db_manager.create_tables(force_recreate=force_recreate)
         
         logger.info("✅ База данных инициализирована")
     
