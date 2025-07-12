@@ -73,66 +73,55 @@ class DatabaseManager:
         finally:
             session.close()
     
-def create_tables(self, force_recreate: bool = False):
-    """Создание всех таблиц БД с опцией принудительного пересоздания"""
-    try:
-        from sqlalchemy.exc import ProgrammingError, IntegrityError
-        from psycopg2.errors import DuplicateTable, UndefinedTable
-        from database.models import force_recreate_database_schema
-        
-        # Если требуется принудительное пересоздание
-        if force_recreate:
-            logger.warning("🚨 ПРИНУДИТЕЛЬНОЕ ПЕРЕСОЗДАНИЕ СХЕМЫ БД!")
-            if force_recreate_database_schema(self.engine):
-                logger.info("✅ Схема БД пересоздана успешно")
-            else:
-                logger.error("❌ Ошибка пересоздания схемы БД")
-                raise Exception("Не удалось пересоздать схему БД")
-        else:
-            # Обычное создание с улучшенной обработкой ошибок
-            try:
-                with PerformanceLogger(logger, "создание таблиц БД"):
-                    Base.metadata.create_all(self.engine, checkfirst=True)
-                logger.info("✅ Все таблицы БД созданы/проверены")
-                
-            except (ProgrammingError, IntegrityError) as e:
-                error_str = str(e).lower()
-                if any(keyword in error_str for keyword in ["already exists", "duplicate"]):
-                    logger.warning(f"⚠️ Объект БД уже существует, продолжаем работу")
-                    logger.debug(f"Детали ошибки: {e}")
-                elif "does not exist" in error_str:
-                    logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА: Нарушена схема БД!")
-                    logger.error(f"🚨 РЕШЕНИЕ: Установите FORCE_RECREATE_TABLES=true в .env")
-                    logger.error(f"Детали: {e}")
-                    raise Exception("Нарушена схема БД! Требуется FORCE_RECREATE_TABLES=true")
-                else:
-                    logger.error(f"❌ Неизвестная ошибка создания таблиц: {e}")
-                    raise
-        
-        # Инициализация базовых настроек с защитой от ошибок
+    def create_tables(self, force_recreate: bool = False):
+        """Создание всех таблиц БД с опцией принудительного пересоздания"""
         try:
-            self._init_default_settings()
-        except Exception as settings_error:
-            logger.error(f"❌ Ошибка инициализации настроек: {settings_error}")
-            if force_recreate:
-                raise
-            else:
-                logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА: Требуется FORCE_RECREATE_TABLES=true")
-                raise Exception("Требуется принудительное пересоздание БД")
+            from sqlalchemy.exc import ProgrammingError, IntegrityError
+            from psycopg2.errors import DuplicateTable, UndefinedTable
+            from database.models import force_recreate_database_schema
             
-        except (ProgrammingError, DuplicateTable) as e:
-            # Обрабатываем ошибки дублирования объектов БД
-            error_str = str(e).lower()
-            if any(keyword in error_str for keyword in ["already exists", "duplicate", "существует"]):
-                logger.warning(f"⚠️ Объект БД уже существует, продолжаем работу")
-                logger.debug(f"Детали ошибки: {e}")
-                # Инициализация базовых настроек даже при существующих объектах
-                self._init_default_settings()
+            # Если требуется принудительное пересоздание
+            if force_recreate:
+                logger.warning("🚨 ПРИНУДИТЕЛЬНОЕ ПЕРЕСОЗДАНИЕ СХЕМЫ БД!")
+                if force_recreate_database_schema(self.engine):
+                    logger.info("✅ Схема БД пересоздана успешно")
+                else:
+                    logger.error("❌ Ошибка пересоздания схемы БД")
+                    raise Exception("Не удалось пересоздать схему БД")
             else:
-                logger.error(f"❌ Критическая ошибка создания таблиц: {e}")
-                raise
+                # Обычное создание с улучшенной обработкой ошибок
+                try:
+                    with PerformanceLogger(logger, "создание таблиц БД"):
+                        Base.metadata.create_all(self.engine, checkfirst=True)
+                    logger.info("✅ Все таблицы БД созданы/проверены")
+                    
+                except (ProgrammingError, IntegrityError) as e:
+                    error_str = str(e).lower()
+                    if any(keyword in error_str for keyword in ["already exists", "duplicate"]):
+                        logger.warning(f"⚠️ Объект БД уже существует, продолжаем работу")
+                        logger.debug(f"Детали ошибки: {e}")
+                    elif "does not exist" in error_str:
+                        logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА: Нарушена схема БД!")
+                        logger.error(f"🚨 РЕШЕНИЕ: Установите FORCE_RECREATE_TABLES=true в .env")
+                        logger.error(f"Детали: {e}")
+                        raise Exception("Нарушена схема БД! Требуется FORCE_RECREATE_TABLES=true")
+                    else:
+                        logger.error(f"❌ Неизвестная ошибка создания таблиц: {e}")
+                        raise
+            
+            # Инициализация базовых настроек с защитой от ошибок
+            try:
+                self._init_default_settings()
+            except Exception as settings_error:
+                logger.error(f"❌ Ошибка инициализации настроек: {settings_error}")
+                if force_recreate:
+                    raise
+                else:
+                    logger.error(f"🚨 КРИТИЧЕСКАЯ ОШИБКА: Требуется FORCE_RECREATE_TABLES=true")
+                    raise Exception("Требуется принудительное пересоздание БД")
+                    
         except Exception as e:
-            logger.error(f"❌ Ошибка создания таблиц: {e}")
+            logger.error(f"❌ Общая ошибка создания таблиц: {e}")
             raise
     
     def _init_default_settings(self):
