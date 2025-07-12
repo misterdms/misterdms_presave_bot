@@ -184,6 +184,20 @@ def create_default_settings() -> List[Dict[str, Any]]:
     ]
 
 # ============================================
+# ЗАГЛУШКИ ДЛЯ СОВМЕСТИМОСТИ С ДРУГИМИ ФАЙЛАМИ
+# ============================================
+
+# Заглушки классов Plan 2-4 для импортов в других файлах
+class UserKarma: 
+    pass
+
+class UserRank:
+    pass
+
+class KarmaHistory:
+    pass
+
+# ============================================
 # ЭКСПОРТ
 # ============================================
 
@@ -193,6 +207,9 @@ __all__ = [
     
     # Модели Plan 1
     'User', 'Link', 'BotSettings',
+    
+    # Заглушки для совместимости
+    'UserKarma', 'UserRank', 'KarmaHistory',
     
     # Вспомогательные функции
     'get_all_table_names', 'create_default_settings'
