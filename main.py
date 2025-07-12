@@ -154,26 +154,16 @@ class PresaveBot:
         logger.info("✅ Конфигурация загружена и валидирована")
     
     def _init_bot(self):
-        """Инициализация Telegram бота"""
-        logger.info("🤖 Инициализация Telegram бота...")
-        
-        self.bot = telebot.TeleBot(
-            self.config.BOT_TOKEN,
-            parse_mode='HTML',
-            threaded=True
-        )
-        
-        # Настройка webhook (если указан RENDER_EXTERNAL_URL)
-        if self.config.RENDER_EXTERNAL_URL:
-            webhook_url = f"https://{self.config.RENDER_EXTERNAL_URL}/webhook"
-            self.bot.remove_webhook()
-            time.sleep(1)
-            self.bot.set_webhook(webhook_url)
-            logger.info(f"✅ Webhook установлен: {webhook_url}")
-        else:
-            logger.info("✅ Режим polling (без webhook)")
+            """Инициализация Telegram бота"""
+            logger.info("🤖 Инициализация Telegram бота...")
             
-        logger.info("✅ Telegram бот инициализирован")
+            self.bot = telebot.TeleBot(
+                self.config.BOT_TOKEN,
+                parse_mode='HTML',
+                threaded=True
+            )
+            
+            logger.info("✅ Telegram бот инициализирован")
     
     def _init_database(self):
         """Инициализация базы данных"""
@@ -317,39 +307,60 @@ class PresaveBot:
         logger.info("✅ Все обработчики зарегистрированы")
     
     def _init_webhook_keepalive(self):
-        """Инициализация HTTP сервера и keep-alive"""
-        logger.info("🌐 Инициализация webhook сервера и keep-alive...")
-        
-        # Инициализация keep-alive менеджера
-        self.keepalive_manager = KeepAliveManager(
-            external_url=self.config.RENDER_EXTERNAL_URL,
-            interval=self.config.KEEPALIVE_INTERVAL
-        )
-        
-        # Инициализация webhook сервера
-        if self.config.RENDER_EXTERNAL_URL:
-            self.webhook_server = WebhookServer(
-                bot=self.bot,
-                webhook_secret=self.config.WEBHOOK_SECRET,
-                host=self.config.HOST,
-                port=int(os.getenv('PORT', 8080))
+            """Инициализация HTTP сервера и keep-alive"""
+            logger.info("🌐 Инициализация webhook сервера и keep-alive...")
+            
+            # Инициализация keep-alive менеджера
+            self.keepalive_manager = KeepAliveManager(
+                external_url=self.config.RENDER_EXTERNAL_URL,
+                interval=self.config.KEEPALIVE_INTERVAL
             )
             
-            # Запуск сервера в отдельном потоке
-            server_thread = threading.Thread(
-                target=self.webhook_server.start_server,
+            # Инициализация webhook сервера
+            if self.config.RENDER_EXTERNAL_URL:
+                self.webhook_server = WebhookServer(
+                    bot=self.bot,
+                    webhook_secret=self.config.WEBHOOK_SECRET,
+                    host=self.config.HOST,
+                    port=int(os.getenv('PORT', 8080))
+                )
+                
+                # Запуск сервера в отдельном потоке
+                server_thread = threading.Thread(
+                    target=self.webhook_server.start_server,
+                    daemon=True
+                )
+                server_thread.start()
+                
+                # Ждем запуска сервера
+                logger.info("⏳ Ожидание запуска HTTP сервера...")
+                time.sleep(5)
+                
+                # Теперь устанавливаем webhook
+                try:
+                    webhook_url = f"https://{self.config.RENDER_EXTERNAL_URL}/webhook"
+                    logger.info(f"🔗 Установка webhook: {webhook_url}")
+                    
+                    self.bot.remove_webhook()
+                    time.sleep(2)
+                    self.bot.set_webhook(webhook_url)
+                    logger.info(f"✅ Webhook установлен успешно: {webhook_url}")
+                    
+                except Exception as e:
+                    logger.error(f"❌ Ошибка установки webhook: {e}")
+                    logger.info("🔄 Переключаемся на polling режим...")
+                    self.config.RENDER_EXTERNAL_URL = None  # Отключаем webhook
+            else:
+                logger.info("✅ Режим polling (без webhook)")
+                
+            # Запуск keep-alive в отдельном потоке
+            keepalive_thread = threading.Thread(
+                target=self.keepalive_manager.start_keepalive,
                 daemon=True
             )
-            server_thread.start()
+            keepalive_thread.start()
             
-        # Запуск keep-alive в отдельном потоке
-        keepalive_thread = threading.Thread(
-            target=self.keepalive_manager.start_keepalive,
-            daemon=True
-        )
-        keepalive_thread.start()
-        
-        logger.info("✅ Webhook сервер и keep-alive запущены")
+            logger.info("✅ Webhook сервер и keep-alive запущены")
     
     def run(self):
         """Запуск бота"""
