@@ -307,6 +307,32 @@ def create_keepalive_manager() -> KeepAliveManager:
         enabled=enabled
     )
 
+def init_keepalive(config) -> KeepAliveManager:
+    """
+    Инициализация keep-alive менеджера с конфигурацией
+    
+    Args:
+        config: Объект конфигурации бота
+        
+    Returns:
+        KeepAliveManager: Инициализированный менеджер
+    """
+    try:
+        logger.info("💓 Инициализация keep-alive менеджера...")
+        
+        # Создаем менеджер с настройками из конфигурации
+        manager = KeepAliveManager(
+            external_url=getattr(config, 'RENDER_EXTERNAL_URL', None),
+            interval=getattr(config, 'KEEPALIVE_INTERVAL', 300),
+            enabled=getattr(config, 'KEEPALIVE_ENABLED', True)
+        )
+        
+        logger.info(f"✅ Keep-alive менеджер инициализирован: {manager.external_url}")
+        return manager
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка инициализации keep-alive: {e}")
+        raise
 
 if __name__ == "__main__":
     """Тестирование keep-alive системы"""
