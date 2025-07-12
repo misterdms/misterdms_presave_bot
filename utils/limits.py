@@ -358,6 +358,28 @@ def get_limit_stats() -> Dict[str, Any]:
     manager = get_limit_manager()
     return manager.get_global_stats()
 
+def get_current_limits() -> Dict[str, Any]:
+    """Получение информации о текущих лимитах"""
+    manager = get_limit_manager()
+    current_config = manager.get_current_config()
+    
+    return {
+        'current_mode': manager.current_mode,
+        'mode_name': current_config.name,
+        'mode_emoji': current_config.emoji,
+        'max_requests_per_hour': current_config.max_requests_per_hour,
+        'cooldown_seconds': current_config.cooldown_seconds,
+        'description': current_config.description,
+        'all_modes': {
+            mode: {
+                'name': config.name,
+                'emoji': config.emoji,
+                'max_hour': config.max_requests_per_hour,
+                'cooldown': config.cooldown_seconds
+            }
+            for mode, config in manager.get_all_modes().items()
+        }
+    }
 
 if __name__ == "__main__":
     """Тестирование системы лимитов"""
