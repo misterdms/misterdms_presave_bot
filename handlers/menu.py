@@ -16,6 +16,7 @@ from database.manager import DatabaseManager
 from utils.security import SecurityManager, admin_required
 from utils.logger import get_logger, log_user_action
 from utils.helpers import format_user_mention
+from datetime import datetime
 
 logger = get_logger(__name__)
 
@@ -293,24 +294,27 @@ class MenuHandler:
         """Команда /menu - показ главного меню"""
         try:
             user_id = message.from_user.id
+            chat_id = message.chat.id
+            chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"🔍 DEBUG menu.py cmd_menu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
+            
             log_user_action(logger, user_id, "открыл главное меню")
             
             # Создаем и отправляем главное меню
             text = self.get_menu_message('main')
             keyboard = self.create_keyboard('main')
             
+            # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"🔍 DEBUG отправляем меню в chat_id={chat_id}")
+            
             self.bot.send_message(
-                message.chat.id,
+                chat_id,  # ← Явно используем chat_id
                 text,
                 reply_markup=keyboard,
                 parse_mode='HTML'
-            )
-            
-        except Exception as e:
-            logger.error(f"❌ Ошибка cmd_menu: {e}")
-            self.bot.send_message(
-                message.chat.id,
-                "❌ Ошибка при открытии меню. Попробуйте /resetmenu"
             )
     
     @admin_required
@@ -318,11 +322,21 @@ class MenuHandler:
         """Команда /resetmenu - сброс меню"""
         try:
             user_id = message.from_user.id
+            chat_id = message.chat.id
+            chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"🔍 DEBUG menu.py cmd_resetmenu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
+            
             log_user_action(logger, user_id, "сбросил меню")
+            
+            # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"🔍 DEBUG отправляем сброс в chat_id={chat_id}")
             
             # Отправляем сообщение о сбросе
             self.bot.send_message(
-                message.chat.id,
+                chat_id,  # ← Явно используем chat_id
                 "🔄 <b>Меню сброшено!</b>\n\nВосстановление функционала...",
                 parse_mode='HTML'
             )
@@ -331,8 +345,11 @@ class MenuHandler:
             text = self.get_menu_message('main')
             keyboard = self.create_keyboard('main')
             
+            # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"🔍 DEBUG отправляем новое меню в chat_id={chat_id}")
+            
             self.bot.send_message(
-                message.chat.id,
+                chat_id,  # ← Явно используем chat_id
                 text,
                 reply_markup=keyboard,
                 parse_mode='HTML'

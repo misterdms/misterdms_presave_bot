@@ -703,39 +703,55 @@ class CommandHandler:
         """Команда /menu - главное меню администратора"""
         try:
             user_id = message.from_user.id
+            chat_id = message.chat.id
+            chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"🔍 DEBUG cmd_menu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
+            
             log_admin_action(logger, user_id, "открыл главное меню")
             
             # Получаем MenuHandler из main.py через ссылку
             menu_handler = getattr(self.bot, '_menu_handler', None)
             if menu_handler:
+                logger.info(f"🔍 DEBUG передаем в menu_handler.cmd_menu для chat_id={chat_id}")
                 menu_handler.cmd_menu(message)
-            else:
-                # Fallback - простое меню
+                else:
+                    # Fallback - простое меню
+                    self.bot.send_message(
+                        message.chat.id,
+                        "🎵 <b>Do Presave Reminder Bot v25+</b>\n\n"
+                        "📱 Главное меню временно недоступно.\n"
+                        "Попробуйте /resetmenu",
+                        parse_mode='HTML'
+                    )
+                        
+            except Exception as e:
+                logger.error(f"❌ Ошибка cmd_menu: {e}")
                 self.bot.send_message(
                     message.chat.id,
-                    "🎵 <b>Do Presave Reminder Bot v25+</b>\n\n"
-                    "📱 Главное меню временно недоступно.\n"
-                    "Попробуйте /resetmenu",
-                    parse_mode='HTML'
+                    "❌ Ошибка открытия меню. Попробуйте /resetmenu"
                 )
-                    
-        except Exception as e:
-            logger.error(f"❌ Ошибка cmd_menu: {e}")
-            self.bot.send_message(
-                message.chat.id,
-                "❌ Ошибка открытия меню. Попробуйте /resetmenu"
-            )
         
     @admin_required
     def cmd_resetmenu(self, message: Message):
         """Команда /resetmenu - сброс меню"""
         try:
             user_id = message.from_user.id
+            chat_id = message.chat.id
+            chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
+            logger.info(f"🔍 DEBUG cmd_resetmenu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
+            
             log_admin_action(logger, user_id, "сбросил меню")
              
             # Получаем MenuHandler из main.py через ссылку
             menu_handler = getattr(self.bot, '_menu_handler', None)
             if menu_handler:
+                logger.info(f"🔍 DEBUG передаем в menu_handler.cmd_resetmenu для chat_id={chat_id}")
                 menu_handler.cmd_resetmenu(message)
             else:
                 # Fallback - простой сброс
