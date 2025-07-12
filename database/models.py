@@ -403,11 +403,25 @@ class Settings(Base):
 def init_database_models(engine):
     """Инициализация моделей базы данных"""
     try:
-        # Создаем все таблицы и индексы с автоматической проверкой существования
-        # checkfirst=True автоматически пропускает уже существующие объекты
-        Base.metadata.create_all(engine, checkfirst=True)
-        print("✅ Модели базы данных инициализированы успешно")
-        return True
+        from sqlalchemy.exc import ProgrammingError
+        from psycopg2.errors import DuplicateTable, DuplicateObject
+        
+        try:
+            # Создаем все таблицы и индексы с автоматической проверкой существования
+            # checkfirst=True автоматически пропускает уже существующие объекты
+            Base.metadata.create_all(engine, checkfirst=True)
+            print("✅ Модели базы данных инициализированы успешно")
+            return True
+            
+        except (ProgrammingError, DuplicateTable, DuplicateObject) as e:
+            error_str = str(e).lower()
+            if any(keyword in error_str for keyword in ["already exists", "duplicate"]):
+                print(f"⚠️ Некоторые объекты БД уже существуют - продолжаем")
+                print("✅ Модели базы данных инициализированы (с предупреждениями)")
+                return True
+            else:
+                raise
+                
     except Exception as e:
         print(f"❌ Ошибка инициализации моделей БД: {e}")
         # Логируем детали для отладки
@@ -415,6 +429,7 @@ def init_database_models(engine):
         print(f"Детали ошибки: {traceback.format_exc()}")
         return False
 
+
 def drop_all_tables(engine):
     """🚨 ОПАСНАЯ ОПЕРАЦИЯ: Полное удаление всех таблиц"""
     try:
@@ -424,16 +439,23 @@ def drop_all_tables(engine):
         from sqlalchemy import text
         
         with engine.begin() as conn:
-            # Отключаем все связи и ограничения
-            conn.execute(text("SET session_replication_role = replica;"))
-            
-            # Удаляем таблицы с CASCADE
+            # Простое удаление таблиц в правильном порядке (от зависимых к независимым)
+            # 1. Сначала удаляем таблицы с foreign keys
             conn.execute(text("DROP TABLE IF EXISTS links CASCADE;"))
+            
+            # 2. Потом удаляем основные таблицы
             conn.execute(text("DROP TABLE IF EXISTS users CASCADE;"))
             conn.execute(text("DROP TABLE IF EXISTS settings CASCADE;"))
             
-            # Восстанавливаем ограничения
-            conn.execute(text("SET session_replication_role = DEFAULT;"))
+            # 3. Удаляем все индексы если остались
+            try:
+                conn.execute(text("DROP INDEX IF EXISTS idx_users_user_id CASCADE;"))
+                conn.execute(text("DROP INDEX IF EXISTS idx_users_username CASCADE;"))
+                conn.execute(text("DROP INDEX IF EXISTS idx_links_user_id_created CASCADE;"))
+                conn.execute(text("DROP INDEX IF EXISTS idx_links_thread_id CASCADE;"))
+                conn.execute(text("DROP INDEX IF EXISTS idx_settings_key CASCADE;"))
+            except Exception as idx_error:
+                print(f"⚠️ Некоторые индексы уже удалены: {idx_error}")
         
         print("✅ Все таблицы успешно удалены")
         return True
@@ -467,57 +489,6 @@ def force_recreate_database_schema(engine):
         print(f"❌ Ошибка пересоздания схемы: {e}")
         return False
 
-def drop_all_tables(engine):
-    """🚨 ОПАСНАЯ ОПЕРАЦИЯ: Полное удаление всех таблиц"""
-    try:
-        print("🚨 ВНИМАНИЕ: Начинается удаление ВСЕХ таблиц...")
-        
-        # Получаем соединение
-        from sqlalchemy import text
-        
-        with engine.begin() as conn:
-            # Отключаем все связи и ограничения
-            conn.execute(text("SET session_replication_role = replica;"))
-            
-            # Удаляем таблицы с CASCADE
-            conn.execute(text("DROP TABLE IF EXISTS links CASCADE;"))
-            conn.execute(text("DROP TABLE IF EXISTS users CASCADE;"))
-            conn.execute(text("DROP TABLE IF EXISTS settings CASCADE;"))
-            
-            # Восстанавливаем ограничения
-            conn.execute(text("SET session_replication_role = DEFAULT;"))
-        
-        print("✅ Все таблицы успешно удалены")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка удаления таблиц: {e}")
-        import traceback
-        print(f"Детали ошибки: {traceback.format_exc()}")
-        return False
-
-
-def force_recreate_database_schema(engine):
-    """Принудительное пересоздание схемы БД"""
-    try:
-        print("🔄 Начинается принудительное пересоздание схемы БД...")
-        
-        # 1. Удаляем все таблицы
-        if not drop_all_tables(engine):
-            print("❌ Не удалось удалить таблицы")
-            return False
-        
-        # 2. Создаем заново
-        if not init_database_models(engine):
-            print("❌ Не удалось создать таблицы")
-            return False
-        
-        print("✅ Схема БД успешно пересоздана!")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Ошибка пересоздания схемы: {e}")
-        return False
 
 def get_table_info():
     """Получение информации о таблицах"""
