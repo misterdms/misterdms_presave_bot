@@ -206,6 +206,9 @@ class PresaveBot:
         # Обработчик команд
         self.command_handler = CommandHandler(self.bot, self.db_manager, self.security_manager)
         
+        # Создаем ссылку на menu_handler в боте для доступа из CommandHandler
+        self.bot._menu_handler = self.menu_handler
+        
         # Обработчик callback'ов (кнопки)
         self.callback_handler = CallbackHandler(self.bot, self.db_manager, self.security_manager)
         
