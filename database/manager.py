@@ -20,9 +20,14 @@ from utils.security import security_manager, ValidationError
 
 logger = get_logger(__name__)
 
-from utils.logger import get_logger
+# Заглушка database_logger
+class DatabaseLoggerStub:
+    def transaction_started(self, *args, **kwargs): pass
+    def transaction_committed(self, *args, **kwargs): pass  
+    def transaction_rolled_back(self, *args, **kwargs): pass
+    def query_executed(self, *args, **kwargs): pass
 
-logger = get_logger(__name__)
+database_logger = DatabaseLoggerStub()
 
 # Заглушки классов Plan 2-4 для типизации
 class UserKarma: pass
