@@ -22,7 +22,7 @@ from telebot.types import Message, CallbackQuery
 # Конфигурация и утилиты
 from config import Config, validate_config
 from utils.logger import get_logger, setup_logging
-from utils.security import validate_admin, SecurityManager
+from utils.security import SecurityManager
 from utils.helpers import format_user_mention
 
 # База данных
