@@ -63,8 +63,8 @@ ujson==5.8.0
 # Timezone support
 pytz==2023.3
 
-# Data validation
-pydantic==2.5.0
+# Data validation - ИСПРАВЛЕННАЯ ВЕРСИЯ (с готовыми wheels)
+pydantic==2.9.2
 
 # Rich console output
 rich==13.7.0
