@@ -467,6 +467,58 @@ def force_recreate_database_schema(engine):
         print(f"❌ Ошибка пересоздания схемы: {e}")
         return False
 
+def drop_all_tables(engine):
+    """🚨 ОПАСНАЯ ОПЕРАЦИЯ: Полное удаление всех таблиц"""
+    try:
+        print("🚨 ВНИМАНИЕ: Начинается удаление ВСЕХ таблиц...")
+        
+        # Получаем соединение
+        from sqlalchemy import text
+        
+        with engine.begin() as conn:
+            # Отключаем все связи и ограничения
+            conn.execute(text("SET session_replication_role = replica;"))
+            
+            # Удаляем таблицы с CASCADE
+            conn.execute(text("DROP TABLE IF EXISTS links CASCADE;"))
+            conn.execute(text("DROP TABLE IF EXISTS users CASCADE;"))
+            conn.execute(text("DROP TABLE IF EXISTS settings CASCADE;"))
+            
+            # Восстанавливаем ограничения
+            conn.execute(text("SET session_replication_role = DEFAULT;"))
+        
+        print("✅ Все таблицы успешно удалены")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка удаления таблиц: {e}")
+        import traceback
+        print(f"Детали ошибки: {traceback.format_exc()}")
+        return False
+
+
+def force_recreate_database_schema(engine):
+    """Принудительное пересоздание схемы БД"""
+    try:
+        print("🔄 Начинается принудительное пересоздание схемы БД...")
+        
+        # 1. Удаляем все таблицы
+        if not drop_all_tables(engine):
+            print("❌ Не удалось удалить таблицы")
+            return False
+        
+        # 2. Создаем заново
+        if not init_database_models(engine):
+            print("❌ Не удалось создать таблицы")
+            return False
+        
+        print("✅ Схема БД успешно пересоздана!")
+        return True
+        
+    except Exception as e:
+        print(f"❌ Ошибка пересоздания схемы: {e}")
+        return False
+
 def get_table_info():
     """Получение информации о таблицах"""
     tables_info = {
