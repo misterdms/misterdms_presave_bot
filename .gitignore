@@ -1,22 +1,395 @@
-# Секретные данные
+# ============================================
+# СЕКРЕТНЫЕ ДАННЫЕ (КРИТИЧНО!)
+# ============================================
+
+# Environment files (ВСЕ ВАРИАНТЫ)
 .env
+.env.*
+!.env.example
+*.env
+env.local
+env.production
+env.development
+env.staging
+env.test
+env.backup
+env.old
+env.bak
 
-# База данных бота
-bot.db
+# ============================================
+# БАЗА ДАННЫХ (ВСЕ ПЛАНЫ)
+# ============================================
 
-# Python кэш
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
+# Database files
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+database/
+db/
+data/
+*.sql
+*.dump
 
-# Логи
+# PostgreSQL specific
+*.pgsql
+*.pg_dump
+pg_hba.conf
+postgresql.conf
+
+# ============================================
+# ПЛАН 4 - BACKUP ФАЙЛЫ (КРИТИЧНО!)
+# ============================================
+
+# Backup files - НЕ должны попадать на GitHub!
+presave_bot_backup_*.zip
+presave_bot_backup_*.json
+presave_bot_backup_*.sql
+backup_*.zip
+backup_*.json
+backup_*.sql
+restore_*.sql
+migration_*.log
+temp_backup/
+backup_temp/
+migration_logs/
+recovery_files/
+*.backup
+*.restore
+*.migration
+
+# ============================================
+# ПЛАН 3 - ИИ И ФОРМЫ ДАННЫЕ
+# ============================================
+
+# AI data
+ai_logs/
+conversation_history/
+ai_cache/
+ai_sessions/
+*.ai_session
+ai_training_data/
+ai_models/
+openai_cache/
+anthropic_cache/
+
+# User forms data
+user_forms/
+form_data/
+uploaded_files/
+screenshots/
+claim_images/
+user_uploads/
+form_sessions/
+*.form_state
+
+# AI API logs
+ai_requests.log
+ai_responses.log
+token_usage.log
+
+# ============================================
+# ПЛАН 2 - СИСТЕМА КАРМЫ ДАННЫЕ
+# ============================================
+
+# Karma system data
+karma_logs/
+karma_history/
+ranking_cache/
+leaderboard_cache/
+user_stats/
+karma_backup/
+
+# ============================================
+# ЛОГИ И ОТЛАДКА (ВСЕ ПЛАНЫ)
+# ============================================
+
+# Log files
 *.log
+*.log.*
+logs/
+log/
+debug.txt
+debug/
+*.debug
+error_reports/
+crashes/
+performance_logs/
+access_logs/
+backup_logs/
+migration_logs/
 
-# Виртуальное окружение
-venv/
+# Monitoring
+monitoring/
+metrics/
+stats/
+analytics/
+
+# ============================================
+# PYTHON (СТАНДАРТНЫЕ)
+# ============================================
+
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyInstaller
+*.manifest
+*.spec
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Unit test / coverage reports
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+.hypothesis/
+.pytest_cache/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+target/
+
+# Jupyter Notebook
+.ipynb_checkpoints
+
+# IPython
+profile_default/
+ipython_config.py
+
+# pyenv
+.python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
+
+# Celery stuff
+celerybeat-schedule
+celerybeat.pid
+
+# SageMath parsed files
+*.sage.py
+
+# Environments
+.env
+.venv
 env/
+venv/
+ENV/
+env.bak/
+venv.bak/
 
-# IDE файлы
+# Spyder project settings
+.spyderproject
+.spyproject
+
+# Rope project settings
+.ropeproject
+
+# mkdocs documentation
+/site
+
+# mypy
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# Pyre type checker
+.pyre/
+
+# ============================================
+# IDE И РЕДАКТОРЫ
+# ============================================
+
+# VSCode
 .vscode/
+*.code-workspace
+.history/
+
+# PyCharm
 .idea/
+*.iml
+*.ipr
+*.iws
+
+# Sublime Text
+*.sublime-project
+*.sublime-workspace
+
+# Vim
+*.swp
+*.swo
+*~
+\#*\#
+/.emacs.desktop
+/.emacs.desktop.lock
+*.elc
+auto-save-list
+tramp
+.\#*
+
+# ============================================
+# ОПЕРАЦИОННЫЕ СИСТЕМЫ
+# ============================================
+
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+.DocumentRevisions-V100
+.fseventsd
+.Spotlight-V100
+.TemporaryItems
+.Trashes
+.VolumeIcon.icns
+.com.apple.timemachine.donotpresent
+.AppleDB
+.AppleDesktop
+Network Trash Folder
+Temporary Items
+.apdisk
+
+# Windows
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+$RECYCLE.BIN/
+*.cab
+*.msi
+*.msix
+*.msm
+*.msp
+*.lnk
+
+# Linux
+*~
+.fuse_hidden*
+.directory
+.Trash-*
+.nfs*
+
+# ============================================
+# WEB И DEPLOYMENT
+# ============================================
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Docker
+.dockerignore
+Dockerfile.local
+docker-compose.override.yml
+
+# Render.com
+.render/
+
+# Heroku
+.heroku/
+
+# ============================================
+# ВРЕМЕННЫЕ И CACHE ФАЙЛЫ
+# ============================================
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+.temporary/
+.cache/
+cache/
+
+# Process files
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Archive files
+*.zip
+*.tar.gz
+*.rar
+*.7z
+
+# Backup files (general)
+*.bak
+*.old
+
+# Test files
+test_data/
+test_results/
+mock/
+fixtures/
+
+# Development
+scratch/
+experimental/
+dev/
+development/
+TODO.txt
+NOTES.txt
+notes/
