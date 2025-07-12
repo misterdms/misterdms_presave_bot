@@ -387,8 +387,8 @@ Index('idx_settings_key', Settings.key)
 def init_database_models(engine):
     """Инициализация моделей базы данных"""
     try:
-        # Создаем все таблицы
-        Base.metadata.create_all(engine)
+        # Создаем все таблицы с проверкой существования
+        Base.metadata.create_all(engine, checkfirst=True)
         print("✅ Модели базы данных инициализированы")
         return True
     except Exception as e:

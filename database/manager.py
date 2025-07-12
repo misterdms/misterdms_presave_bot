@@ -77,7 +77,7 @@ class DatabaseManager:
         """Создание всех таблиц БД"""
         try:
             with PerformanceLogger(logger, "создание таблиц БД"):
-                Base.metadata.create_all(self.engine)
+                Base.metadata.create_all(self.engine, checkfirst=True)
             
             logger.info("✅ Все таблицы БД созданы/проверены")
             
