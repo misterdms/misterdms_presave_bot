@@ -74,12 +74,11 @@ class Config:
         self.BOT_TOKEN = os.getenv('BOT_TOKEN')
         self.GROUP_ID = int(os.getenv('GROUP_ID'))
         
-        # Парсинг WHITELIST топиков (бывший THREAD_ID)
-        whitelist_str = os.getenv('WHITELIST_ID', '')
+        # WHITELIST топиков через запятую (исправляем переменную!)
+        whitelist_raw = os.getenv('WHITELIST_ID', os.getenv('WHITELIST', ''))
         self.WHITELIST_THREADS = [
-            int(thread_id.strip()) 
-            for thread_id in whitelist_str.split(',') 
-            if thread_id.strip().isdigit()
+            int(x.strip()) for x in whitelist_raw.split(',') 
+            if x.strip().isdigit()
         ]
         
         # Парсинг админов
@@ -134,6 +133,20 @@ class Config:
         self.WEBHOOK_PATH = f"/webhook/{self.WEBHOOK_SECRET}"
         self.HEALTH_CHECK_PATH = "/health"
         self.PORT = int(os.getenv('PORT', '10000'))  # Render.com default
+        
+        # ДОБАВЛЯЕМ ОТСУТСТВУЮЩИЕ ПЕРЕМЕННЫЕ
+        self.HOST = os.getenv('HOST', '0.0.0.0')
+        self.WEBHOOK_URL = f"https://{self.RENDER_EXTERNAL_URL}{self.WEBHOOK_PATH}" if self.RENDER_EXTERNAL_URL else None
+        self.WEBHOOK_MAX_CONNECTIONS = int(os.getenv('WEBHOOK_MAX_CONNECTIONS', '40'))
+        
+        # Keep-alive настройки
+        self.KEEPALIVE_URL = os.getenv('KEEPALIVE_URL', '')
+        self.KEEPALIVE_INTERVAL = int(os.getenv('KEEPALIVE_INTERVAL', '300'))
+        self.KEEPALIVE_ENABLED = self._get_bool('KEEPALIVE_ENABLED', True)
+        
+        # Polling настройки (для локальной разработки)
+        self.POLLING_INTERVAL = int(os.getenv('POLLING_INTERVAL', '1'))
+        self.POLLING_TIMEOUT = int(os.getenv('POLLING_TIMEOUT', '20'))
     
     def _setup_logging_config(self):
         """Настройка логирования"""
