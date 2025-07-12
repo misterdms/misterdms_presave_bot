@@ -26,11 +26,9 @@ logger = get_logger(__name__)
 
 **НАЙТИ рядом с [строка ~25 после импортов]:**
 
-```python
 from utils.logger import get_logger
 
 logger = get_logger(__name__)
-```
 
 # Заглушки классов Plan 2-4 для типизации
 class UserKarma: pass
