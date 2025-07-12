@@ -737,6 +737,29 @@ class ConfigHelper:
             return True
 
 # ============================================
+# СИСТЕМНЫЙ МОНИТОР (ЗАГЛУШКА ДЛЯ ПЛАН 1)
+# ============================================
+
+class SystemMonitor:
+    """Заглушка системного монитора для Plan 1"""
+    
+    def __init__(self):
+        self.start_time = datetime.now(timezone.utc)
+    
+    def get_system_info(self):
+        """Получение базовой информации о системе"""
+        return {
+            'status': 'ok',
+            'uptime': (datetime.now(timezone.utc) - self.start_time).total_seconds(),
+            'memory_usage': 0,
+            'cpu_usage': 0
+        }
+    
+    def is_healthy(self):
+        """Проверка здоровья системы"""
+        return True
+
+# ============================================
 # ЭКСПОРТ
 # ============================================
 
