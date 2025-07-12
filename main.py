@@ -184,7 +184,7 @@ class PresaveBot:
         self.db_manager.create_tables(force_recreate=force_recreate)
         
         logger.info("✅ База данных инициализирована")
-    
+
     def _init_security(self):
         """Инициализация менеджера безопасности"""
         logger.info("🛡️ Инициализация системы безопасности...")
@@ -344,11 +344,20 @@ class PresaveBot:
                 
                 # Теперь устанавливаем webhook
                 try:
-                    webhook_url = f"https://{self.config.RENDER_EXTERNAL_URL}/webhook"
+                    # Убираем https:// если уже есть в RENDER_EXTERNAL_URL
+                    external_url = self.config.RENDER_EXTERNAL_URL.replace('https://', '').replace('http://', '')
+                    webhook_url = f"https://{external_url}/webhook"
                     logger.info(f"🔗 Установка webhook: {webhook_url}")
                     
-                    self.bot.remove_webhook()
-                    time.sleep(2)
+                    # ВАЖНО: Сначала принудительно удаляем webhook для избежания 409 ошибки
+                    try:
+                        self.bot.remove_webhook()
+                        logger.info("✅ Старый webhook удален")
+                        time.sleep(3)  # Даем Telegram время обработать
+                    except Exception as webhook_remove_error:
+                        logger.warning(f"⚠️ Ошибка удаления webhook: {webhook_remove_error}")
+                    
+                    # Устанавливаем новый webhook
                     self.bot.set_webhook(webhook_url)
                     logger.info(f"✅ Webhook установлен успешно: {webhook_url}")
                     

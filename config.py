@@ -146,6 +146,15 @@ class Config:
         self.ENABLE_PLAN_3_FEATURES = os.getenv('ENABLE_PLAN_3_FEATURES', 'false').lower() == 'true'
         self.ENABLE_PLAN_4_FEATURES = os.getenv('ENABLE_PLAN_4_FEATURES', 'false').lower() == 'true'
         
+        # ============================================
+        # ФЛАГИ УПРАВЛЕНИЯ БАЗОЙ ДАННЫХ
+        # ============================================
+
+        # КРИТИЧЕСКИЙ ФЛАГ: Принудительное пересоздание таблиц при старте
+        self.FORCE_RECREATE_TABLES = os.getenv('FORCE_RECREATE_TABLES', 'false').lower() == 'true'
+        self.FORCE_DROP_CASCADE = os.getenv('FORCE_DROP_CASCADE', 'true').lower() == 'true'
+        
+        
     def _parse_int_list(self, value: str) -> List[int]:
         """Парсинг списка целых чисел из строки через запятую"""
         if not value:
