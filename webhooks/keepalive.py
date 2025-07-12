@@ -127,7 +127,15 @@ class KeepAliveManager:
             return
         
         start_time = datetime.now()
-        ping_url = f"https://{self.external_url}/health"
+        
+        # Нормализация URL - убираем дублирование протокола
+        base_url = self.external_url
+        if base_url.startswith('https://'):
+            base_url = base_url[8:]  # убираем https://
+        elif base_url.startswith('http://'):
+            base_url = base_url[7:]   # убираем http://
+            
+        ping_url = f"https://{base_url}/health"
         
         try:
             # Подготавливаем запрос
