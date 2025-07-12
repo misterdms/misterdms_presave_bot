@@ -20,6 +20,51 @@ from utils.security import security_manager, ValidationError
 
 logger = get_logger(__name__)
 
+# ИСПРАВЛЕНИЕ database/manager.py - ЗАГЛУШКИ КЛАССОВ И ДЕКОРАТОРА
+
+## ДОБАВИТЬ В НАЧАЛО ФАЙЛА ПОСЛЕ ИМПОРТОВ
+
+**НАЙТИ рядом с [строка ~25 после импортов]:**
+
+```python
+from utils.logger import get_logger
+
+logger = get_logger(__name__)
+```
+
+**ДОБАВИТЬ ПОСЛЕ:**
+
+```python
+# Заглушки классов Plan 2-4 для типизации
+class UserKarma: pass
+class KarmaHistory: pass
+class PresaveRequest: pass
+class ApprovalClaim: pass
+class ClaimScreenshot: pass
+class FormSession: pass
+class AIConversation: pass
+class AutoKarmaLog: pass
+class BackupHistory: pass
+class MessageStats: pass
+
+# Заглушки Enums
+class UserRank: pass
+class PresaveRequestStatus: pass  
+class ApprovalClaimStatus: pass
+class FormState: pass
+
+# Заглушки функций
+def get_user_rank_by_karma(karma_points): return None
+def get_karma_threshold_for_next_rank(karma): return None
+
+# Заглушка декоратора для Plan 1
+def log_database_operation(table_name: str, operation_type: str = "UNKNOWN"):
+    """Заглушка декоратора логирования операций БД"""
+    def decorator(func):
+        return func  # Просто возвращаем функцию без изменений
+    return decorator
+```
+
 # Заглушка декоратора для Plan 1
 def log_database_operation(table_name: str, operation_type: str = "UNKNOWN"):
     """Заглушка декоратора логирования операций БД"""
