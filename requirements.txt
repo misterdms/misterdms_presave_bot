@@ -1,43 +1,37 @@
 # ============================================
-# Do Presave Reminder Bot v25 - MINIMAL STABLE VERSION
-# ПРОВЕРЕНО: НЕТ конфликтов зависимостей!
+# Do Presave Reminder Bot v25 - ИСПРАВЛЕННАЯ ВЕРСИЯ
 # ============================================
 
-# ============================================
-# КРИТИЧНЫЕ ПАКЕТЫ - PLAN 1 ТОЛЬКО
-# ============================================
-
-# Telegram Bot API (ОБЯЗАТЕЛЬНО)
+# Telegram Bot API
 pyTelegramBotAPI==4.22.1
 
-# Environment variables (ОБЯЗАТЕЛЬНО)  
+# Environment variables
 python-dotenv==1.0.0
 
-# HTTP requests (ОБЯЗАТЕЛЬНО)
+# HTTP requests
 requests==2.32.3
 
-# Web framework для webhook (ОБЯЗАТЕЛЬНО)
+# Web framework для webhook
 flask==3.0.0
 
-# WSGI server для Render.com (ОБЯЗАТЕЛЬНО)
+# WSGI server для Render.com
 gunicorn==21.2.0
 
-# PostgreSQL adapter (ОБЯЗАТЕЛЬНО)
+# PostgreSQL adapter
 psycopg2-binary==2.9.10
 
-# Database ORM (ОБЯЗАТЕЛЬНО)
+# Database ORM
 sqlalchemy==2.0.36
 
-# Logging and monitoring (КРИТИЧНО для utils/logger.py)
+# Logging
 structlog==23.2.0
 colorama==0.4.6
 
+# System monitoring
 psutil==5.9.6
-schedule==1.2.0 
 
-# ============================================
-# ВСПОМОГАТЕЛЬНЫЕ ПАКЕТЫ (МИНИМУМ)
-# ============================================
+# Task scheduling
+schedule==1.2.0
 
 # Date utilities
 python-dateutil==2.8.2
@@ -45,11 +39,9 @@ python-dateutil==2.8.2
 # JSON processing
 ujson==5.8.0
 
-# Rich console для красивых логов
-rich==13.7.0
-
-# Encryption для PostgreSQL
-cryptography==44.0.0
+# НЕОБХОДИМЫЕ ДОБАВЛЕНИЯ ДЛЯ WEBHOOK И THREADING
+werkzeug==3.0.1
+threading-timer==0.1.0
 
 # ============================================
 # ОТЛОЖЕННЫЕ ПАКЕТЫ
