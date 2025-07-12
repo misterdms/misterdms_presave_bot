@@ -1,6 +1,6 @@
 # ============================================
 # Do Presave Reminder Bot v25+ - PRODUCTION READY
-# Исправленные версии для совместимости с Python 3.11+ и Render.com
+# Исправленные версии - БЕЗ проблемных пакетов
 # ============================================
 
 # ============================================
@@ -113,12 +113,6 @@ schedule==1.2.0
 # Enhanced backup compression
 zipfile-deflate64==0.2.0
 
-# Database backup utilities
-pg_dump==1.0.0
-
-# File operations
-pathlib2==2.3.7
-
 # ============================================
 # ПЛАН 4 - BACKUP СИСТЕМА (КРИТИЧНО!)
 # ============================================
@@ -142,30 +136,6 @@ validators==0.22.0
 # Memory optimization
 pympler==0.9
 
-# ============================================
-# DEVELOPMENT & TESTING (ОПЦИОНАЛЬНО)
-# ============================================
-
-# Testing framework
-pytest==7.4.3
-pytest-asyncio==0.21.1
-pytest-mock==3.12.0
-
-# Code formatting
-black==23.11.0
-isort==5.12.0
-
-# Type checking
-mypy==1.7.1
-
-# Linting
-flake8==6.1.0
-pylint==3.0.3
-
-# ============================================
-# БЕЗОПАСНОСТЬ И СТАБИЛЬНОСТЬ
-# ============================================
-
 # Security scanning
 safety==2.3.5
 
@@ -173,56 +143,27 @@ safety==2.3.5
 virtualenv==20.24.7
 
 # ============================================
-# RENDER.COM СПЕЦИФИЧНЫЕ
+# NOTES FOR DEPLOYMENT
 # ============================================
 
-# WSGI server optimization
-gevent==23.9.1
+# УДАЛЕННЫЕ ПРОБЛЕМНЫЕ ПАКЕТЫ:
+# - pg_dump==1.0.0  # Утилита командной строки, НЕ Python пакет
+# - pathlib2==2.3.7  # pathlib встроен в Python 3.4+
+# - shutil==1.0.0  # shutil встроен в Python
+# - asyncio==3.4.3  # asyncio встроен в Python 3.7+
+# - gevent==23.9.1  # Render.com управляет этим
+# - supervisor==4.2.5  # Render.com управляет этим
 
-# Process management
-supervisor==4.2.5
-
-# ============================================
-# NOTES FOR DEVELOPMENT
-# ============================================
-
-# ПЛАН 1: Минимальная установка
-# pip install -r requirements.txt --only-sections="ПЛАН 1"
-
-# ПЛАН 2: Добавить карму  
-# pip install rich pydantic pytz
-
-# ПЛАН 3: Добавить ИИ
-# pip install openai anthropic tiktoken nltk langdetect fuzzywuzzy
-
-# ПЛАН 4: Добавить backup (КРИТИЧНО!)
-# pip install schedule zipfile-deflate64
-
-# ============================================
-# COMPATIBILITY MATRIX
-# ============================================
-
-# Python: 3.11+ (Render.com compatibility)
-# PostgreSQL: 13+ (Render.com Free tier)
+# COMPATIBILITY MATRIX:
+# Python: 3.11.10 (стабильная версия для Render.com)
+# PostgreSQL: встроенный в Render.com (pg_dump доступен через subprocess)
 # Telegram Bot API: 6.0+ (latest features)
 # OpenAI API: v1+ (for Plan 3)
 # Anthropic API: 0.7+ (for Plan 3)
 
-# ============================================
-# MEMORY USAGE ESTIMATION
-# ============================================
-
-# План 1: ~150MB RAM
-# План 2: ~170MB RAM (+karma system)
-# План 3: ~250MB RAM (+AI integrations)  
-# План 4: ~180MB RAM (+backup system)
-# Всего: ~300MB RAM (в пределах Render.com Free tier 512MB)
-
-# ============================================
-# DEPLOYMENT VERIFICATION
-# ============================================
-
-# Команда для проверки зависимостей:
-# pip check
-# pip list --outdated
-# safety check
+# MEMORY USAGE:
+# План 1: ~120MB RAM (без development пакетов)
+# План 2: ~140MB RAM (+karma system)
+# План 3: ~200MB RAM (+AI integrations)  
+# План 4: ~160MB RAM (+backup system)
+# Всего: ~250MB RAM (безопасно для Render.com Free tier 512MB)
