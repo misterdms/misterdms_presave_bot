@@ -20,6 +20,13 @@ from utils.security import security_manager, ValidationError
 
 logger = get_logger(__name__)
 
+# Заглушка декоратора для Plan 1
+def log_database_operation(table_name: str, operation_type: str = "UNKNOWN"):
+    """Заглушка декоратора логирования операций БД"""
+    def decorator(func):
+        return func  # Просто возвращаем функцию без изменений
+    return decorator
+
 class DatabaseError(Exception):
     """Базовое исключение для ошибок базы данных"""
     pass
