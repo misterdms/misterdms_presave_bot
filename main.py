@@ -21,7 +21,7 @@ import psutil
 # Локальные модули
 from config import config, ConfigError
 from database.manager import get_database_manager, DatabaseError
-from utils.logger import get_logger, setup_main_logger
+from utils.logger import get_logger, setup_logging
 from utils.security import security_manager
 from utils.helpers import MessageFormatter, SystemMonitor
 
@@ -447,7 +447,7 @@ def main():
     """Главная функция запуска приложения"""
     
     # Настройка логирования
-    setup_main_logger()
+    setup_logging()
     
     # Вывод информации о запуске
     logger.info("=" * 60)
