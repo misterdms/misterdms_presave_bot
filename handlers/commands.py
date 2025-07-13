@@ -174,6 +174,8 @@ class CommandHandler:
     # ПЛАН 1: БАЗОВЫЕ КОМАНДЫ (АКТИВНЫЕ)
     # ============================================
     
+    @admin_required
+    @whitelist_required
     def cmd_start(self, message: Message):
         """Команда /start - приветствие"""
         try:
@@ -531,21 +533,25 @@ class CommandHandler:
     # ============================================
     
     @admin_required
+    @whitelist_required
     def cmd_setmode_conservative(self, message: Message):
         """Команда /setmode_conservative"""
         self._set_limit_mode(message, 'CONSERVATIVE')
     
     @admin_required
+    @whitelist_required
     def cmd_setmode_normal(self, message: Message):
         """Команда /setmode_normal"""
         self._set_limit_mode(message, 'NORMAL')
     
     @admin_required
+    @whitelist_required
     def cmd_setmode_burst(self, message: Message):
         """Команда /setmode_burst"""
         self._set_limit_mode(message, 'BURST')
     
     @admin_required
+    @whitelist_required
     def cmd_setmode_adminburst(self, message: Message):
         """Команда /setmode_adminburst"""
         self._set_limit_mode(message, 'ADMIN_BURST')
@@ -596,6 +602,7 @@ class CommandHandler:
             )
     
     @admin_required
+    @whitelist_required
     def cmd_currentmode(self, message: Message):
         """Команда /currentmode - показ текущего режима"""
         try:
@@ -632,6 +639,7 @@ class CommandHandler:
     # ============================================
     
     @admin_required
+    @whitelist_required
     def cmd_linksby(self, message: Message):
         """Команда /linksby @username - ссылки пользователя"""
         try:
@@ -699,6 +707,7 @@ class CommandHandler:
             )
     
     @admin_required
+    @whitelist_required
     def cmd_menu(self, message: Message):
         """Команда /menu - главное меню администратора"""
         try:
@@ -735,6 +744,7 @@ class CommandHandler:
             )
         
     @admin_required
+    @whitelist_required
     def cmd_resetmenu(self, message: Message):
         """Команда /resetmenu - сброс меню"""
         try:

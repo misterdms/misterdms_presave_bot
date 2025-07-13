@@ -290,6 +290,7 @@ class MenuHandler:
     # ============================================
     
     @admin_required
+    @whitelist_required
     def cmd_menu(self, message: Message):
         """Команда /menu - показ главного меню"""
         try:
