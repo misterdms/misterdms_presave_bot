@@ -51,7 +51,22 @@ class MenuHandler:
                     ('❓ Помощь', 'menu_help')
                 ]
             },
-            
+
+            'mystats': {
+                'title': '📊 Моя статистика',
+                'description': 'Персональная статистика и активность',
+                'buttons': [
+                    ('📎 Мои ссылки', 'mystats_my_links'),
+                    ('📅 Активность по дням', 'mystats_daily_activity'),
+                    ('🏆 Мой рейтинг', 'mystats_my_ranking'),
+                    # ПЛАН 2: Статистика кармы (ЗАГЛУШКИ)
+                    # ('⭐ Моя карма', 'mystats_my_karma'),
+                    # ('🎖️ Мое звание', 'mystats_my_rank'),
+                    ('🔙 Назад', 'menu_main'),
+                    ('🏠 Главное меню', 'menu_main')
+                ]
+            },
+
             'leaderboard': {
                 'title': '🏆 Лидерборд Топ-10',
                 'description': 'Рейтинги участников сообщества',
@@ -526,6 +541,12 @@ class MenuHandler:
             self._show_current_mode(callback_query)
         elif data == 'action_reload_modes':
             self._reload_modes(callback_query)
+        elif data == 'mystats_my_links':
+            self._show_my_links(callback_query)
+        elif data == 'mystats_daily_activity':
+            self._show_daily_activity(callback_query)
+        elif data == 'mystats_my_ranking':
+            self._show_my_ranking(callback_query)
         else:
             self.bot.answer_callback_query(
                 callback_query.id,
@@ -1015,6 +1036,64 @@ class MenuHandler:
         
         self.bot.answer_callback_query(callback_query.id)
 
+    def _show_my_links(self, callback_query):
+        """Показ ссылок текущего пользователя"""
+        try:
+            user_id = callback_query.from_user.id
+            
+            # Получаем ссылки пользователя (последние 10)
+            links = self.db.get_links_by_user_id(user_id, limit=10)
+            
+            if not links:
+                text = "📎 <b>Мои ссылки</b>\n\n🤷 У вас пока нет опубликованных ссылок"
+            else:
+                text_parts = [f"📎 <b>Мои ссылки</b> (последние {len(links)})\n"]
+                
+                for i, link in enumerate(links, 1):
+                    date_str = link.created_at.strftime("%d.%m %H:%M")
+                    display_url = link.url if len(link.url) <= 50 else link.url[:47] + "..."
+                    
+                    text_parts.append(f"{i}. {date_str}")
+                    text_parts.append(f"   🔗 {display_url}")
+                    
+                    if i < len(links):
+                        text_parts.append("")
+                
+                text = "\n".join(text_parts)
+            
+            # Обновляем сообщение
+            self.bot.edit_message_text(
+                text,
+                callback_query.message.chat.id,
+                callback_query.message.message_id,
+                reply_markup=self.create_keyboard('mystats'),
+                parse_mode='HTML'
+            )
+            
+            self.bot.answer_callback_query(callback_query.id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка _show_my_links: {e}")
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❌ Ошибка получения ссылок"
+            )
+
+    def _show_daily_activity(self, callback_query):
+        """ЗАГЛУШКА: Показ активности по дням"""
+        self.bot.answer_callback_query(
+            callback_query.id,
+            "📅 Статистика активности по дням будет доступна в следующих версиях",
+            show_alert=True
+        )
+
+    def _show_my_ranking(self, callback_query):
+        """ЗАГЛУШКА: Показ рейтинга пользователя"""
+        self.bot.answer_callback_query(
+            callback_query.id,
+            "🏆 Персональный рейтинг будет доступен в ПЛАНЕ 2",
+            show_alert=True
+        )
 
 if __name__ == "__main__":
     """Тестирование MenuHandler"""
