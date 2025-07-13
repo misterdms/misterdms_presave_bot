@@ -447,6 +447,10 @@ class MenuHandler:
             # Обработка помощи
             elif data.startswith('help_'):
                 self._handle_help_action(callback_query)
+
+            # Обработка статистики пользователя
+            elif data.startswith('mystats_'):
+                self._handle_mystats_action(callback_query)
             
             # ПЛАН 3: Обработка ИИ (ЗАГЛУШКИ)
             # elif data.startswith('ai_'):
@@ -899,7 +903,130 @@ class MenuHandler:
                 callback_query.id,
                 "❓ Неизвестный раздел помощи"
             )
-    
+
+    def _handle_mystats_action(self, callback_query):
+        """Обработка действий статистики пользователя"""
+        data = callback_query.data
+        user_id = callback_query.from_user.id
+        
+        if data == 'mystats_links':
+            self._show_user_links(callback_query, user_id)
+        elif data == 'mystats_activity':
+            self._show_user_activity(callback_query, user_id)
+        elif data == 'mystats_rating':
+            self._show_user_rating(callback_query, user_id)
+        else:
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❓ Неизвестная статистика"
+            )
+
+    def _show_user_links(self, callback_query, user_id):
+        """Показ ссылок пользователя"""
+        try:
+            links = self.db.get_user_links(user_id, limit=10)
+            
+            if not links:
+                text = "🔗 <b>Мои ссылки</b>\n\nВы еще не отправляли ссылок."
+            else:
+                text = f"🔗 <b>Мои ссылки</b>\n\nПоследние {len(links)} ссылок:\n\n"
+                for i, link in enumerate(links, 1):
+                    # link это объект SQLAlchemy модели Link
+                    date_str = link.created_at.strftime('%d.%m.%Y %H:%M')
+                    url_display = link.url if len(link.url) <= 50 else link.url[:47] + "..."
+                    text += f"{i}. {url_display}\n"
+                    text += f"   📅 {date_str}\n\n"
+            
+            keyboard = self.create_keyboard('mystats')
+            
+            self.bot.edit_message_text(
+                text,
+                callback_query.message.chat.id,
+                callback_query.message.message_id,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            
+            self.bot.answer_callback_query(callback_query.id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка _show_user_links: {e}")
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❌ Ошибка загрузки ссылок"
+            )
+
+    def _show_user_activity(self, callback_query, user_id):
+        """Показ активности пользователя по дням"""
+        try:
+            # Используем существующий метод get_user_stats для получения базовой статистики
+            stats = self.db.get_user_stats(user_id)
+            
+            text = "📅 <b>Активность по дням</b>\n\n"
+            if not stats:
+                text += "Данных об активности пока нет."
+            else:
+                text += f"📊 Всего ссылок: {stats.get('total_links', 0)}\n"
+                text += f"📅 Ссылок за месяц: {stats.get('links_this_month', 0)}\n"
+                text += f"👤 Участник с: {stats.get('member_since', 'Неизвестно')}\n"
+                text += f"🕒 Последняя активность: {stats.get('last_seen', 'Неизвестно')}\n\n"
+                text += "⚠️ Детальная активность по дням будет доступна в следующих обновлениях."
+            
+            keyboard = self.create_keyboard('mystats')
+            
+            self.bot.edit_message_text(
+                text,
+                callback_query.message.chat.id,
+                callback_query.message.message_id,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            
+            self.bot.answer_callback_query(callback_query.id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка _show_user_activity: {e}")
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❌ Ошибка загрузки активности"
+            )
+
+    def _show_user_rating(self, callback_query, user_id):
+        """Показ рейтинга пользователя"""
+        try:
+            # Используем существующий метод get_user_stats
+            stats = self.db.get_user_stats(user_id)
+            
+            text = "🏆 <b>Мой рейтинг</b>\n\n"
+            if not stats:
+                text += "Данных о рейтинге пока нет."
+            else:
+                text += f"👤 @{stats.get('username', 'неизвестно')}\n"
+                text += f"📊 Всего ссылок: {stats.get('total_links', 0)}\n"
+                text += f"📅 Ссылок за месяц: {stats.get('links_this_month', 0)}\n"
+                text += f"👑 Статус: {'Администратор' if stats.get('is_admin', False) else 'Пользователь'}\n"
+                text += f"🕒 Участник с: {stats.get('member_since', 'Неизвестно')}\n\n"
+                text += "⚠️ Система рангов и подробный рейтинг будут доступны в следующих обновлениях (План 2)."
+            
+            keyboard = self.create_keyboard('mystats')
+            
+            self.bot.edit_message_text(
+                text,
+                callback_query.message.chat.id,
+                callback_query.message.message_id,
+                reply_markup=keyboard,
+                parse_mode='HTML'
+            )
+            
+            self.bot.answer_callback_query(callback_query.id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка _show_user_rating: {e}")
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❌ Ошибка загрузки рейтинга"
+            )
+
     def _show_commands_list(self, callback_query):
         """Показ списка команд"""
         text_parts = [

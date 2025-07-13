@@ -100,6 +100,14 @@ class CallbackHandler:
         
         for callback in help_callbacks:
             self.callback_handlers[callback] = self.menu_handler.handle_menu_callback
+            
+        # Статистика пользователя - делегируем в MenuHandler
+        mystats_callbacks = [
+            'mystats_links', 'mystats_activity', 'mystats_rating'
+        ]
+
+        for callback in mystats_callbacks:
+            self.callback_handlers[callback] = self.menu_handler.handle_menu_callback
         
         # Callback'ы "в разработке"
         self.callback_handlers['dev_*'] = self._handle_dev_callback
@@ -212,6 +220,7 @@ class CallbackHandler:
             'analytics_': self.menu_handler.handle_menu_callback,
             'diag_': self.menu_handler.handle_menu_callback,
             'help_': self.menu_handler.handle_menu_callback,
+            'mystats_': self.menu_handler.handle_menu_callback,
             'dev_': self._handle_dev_callback,
             
             # ПЛАН 2: Префиксы кармы (ЗАГЛУШКИ)
