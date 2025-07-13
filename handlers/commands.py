@@ -717,15 +717,15 @@ class CommandHandler:
             if menu_handler:
                 logger.info(f"🔍 DEBUG передаем в menu_handler.cmd_menu для chat_id={chat_id}")
                 menu_handler.cmd_menu(message)
-                else:
-                    # Fallback - простое меню
-                    self.bot.send_message(
-                        message.chat.id,
-                        "🎵 <b>Do Presave Reminder Bot v25+</b>\n\n"
-                        "📱 Главное меню временно недоступно.\n"
-                        "Попробуйте /resetmenu",
-                        parse_mode='HTML'
-                    )
+            else:
+                # Fallback - простое меню
+                self.bot.send_message(
+                    message.chat.id,
+                    "🎵 <b>Do Presave Reminder Bot v25+</b>\n\n"
+                    "📱 Главное меню временно недоступно.\n"
+                    "Попробуйте /resetmenu",
+                    parse_mode='HTML'
+                )
                         
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_menu: {e}")
