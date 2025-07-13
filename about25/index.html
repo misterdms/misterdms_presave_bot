@@ -1,0 +1,744 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Do Presave Reminder Bot - Гайд v25</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        /* CSS ПЕРЕМЕННЫЕ ДЛЯ АДАПТИВНОСТИ */
+        :root {
+            /* ОРИГИНАЛЬНАЯ ЦВЕТОВАЯ СХЕМА */
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --container-bg: rgba(255, 255, 255, 0.92);
+            --container-bg-dark: rgba(42, 42, 42, 0.85);
+            --primary-blue: #7a7eea;
+            --accent-red: #fab743;
+            --success-green: #2ecc71;
+            --warning-orange: #f39c12;
+            --future-purple: #9b59b6;
+            
+            /* НОВЫЕ ПОЛУПРОЗРАЧНЫЕ ГРАДИЕНТЫ */
+            --highlight-gradient: linear-gradient(120deg, rgba(168, 237, 234, 0.7) 0%, rgba(254, 214, 227, 0.7) 100%);
+            --fire-gradient: linear-gradient(45deg, #ff6b6b, #feca57);
+            
+            /* АНИМИРОВАННЫЕ ГРАДИЕНТЫ */
+            --animated-bg: linear-gradient(270deg, #667eea, #764ba2, #667eea, #764ba2);
+            --animated-highlight: linear-gradient(270deg, 
+                rgba(221, 33, 224, 0.7),
+                rgba(134, 35, 234, 0.7), 
+                rgba(134, 35, 234, 0.7),  
+                rgba(221, 33, 224, 0.7)
+            );
+            --animated-fire: linear-gradient(270deg, #ff6b6b, #feca57, #ff6b6b, #feca57);
+            
+            /* АДАПТИВНЫЕ РАЗМЕРЫ - ПРАВИЛЬНАЯ ЛОГИКА! */
+            /* Чем меньше экран, тем БОЛЬШЕ базовый шрифт */
+            --font-base: clamp(20px, 5vw, 24px);  /* 18px на мобайле, 16px на десктопе */
+            --font-small: clamp(16px, 4vw, 18px);
+            --font-large: clamp(20px, 6vw, 36px);
+            --font-xlarge: clamp(24px, 8vw, 72px);
+            
+            /* АДАПТИВНЫЕ ОТСТУПЫ */
+            --padding-base: clamp(20px, 5vw, 30px);
+            --padding-small: clamp(15px, 4vw, 20px);
+            --margin-base: clamp(15px, 4vw, 25px);
+            
+            /* АДАПТИВНЫЕ СКРУГЛЕНИЯ И ТЕНИ */
+            --border-radius: clamp(12px, 3vw, 15px);
+            --border-radius-small: clamp(8px, 2vw, 10px);
+            --shadow-main: 0 clamp(8px, 2vw, 12px) clamp(25px, 6vw, 35px) rgba(0,0,0,0.3);
+            --shadow-light: 0 clamp(4px, 1vw, 6px) clamp(15px, 4vw, 20px) rgba(0,0,0,0.1);
+            
+            /* АДАПТИВНЫЕ РАЗМЕРЫ КНОПОК */
+            --button-height: clamp(48px, 12vw, 56px);
+            --button-padding: clamp(12px, 3vw, 16px) clamp(20px, 5vw, 24px);
+            
+            /* TELEGRAM ПЕРЕМЕННЫЕ (опционально) */
+            --tg-theme-bg-color: var(--tg-theme-bg-color, transparent);
+            --tg-theme-text-color: var(--tg-theme-text-color, #333);
+        }
+
+        /* СБРОС И БАЗОВЫЕ СТИЛИ */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: var(--padding-small);
+            
+            /* АНИМИРОВАННЫЙ ГРАДИЕНТНЫЙ ФОН! */
+            background: var(--animated-bg);
+            background-size: 400% 400%;
+            animation: gradientShift 8s ease infinite;
+            
+            color: #333;
+            font-size: var(--font-base);
+            overflow-x: hidden;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+            min-height: 100vh;
+        }
+
+        /* КОНТЕЙНЕР С ОРИГИНАЛЬНОЙ КРАСОТОЙ И ЛЕГКОЙ АНИМАЦИЕЙ */
+        .container {
+            max-width: clamp(100%, 90vw, 800px);
+            margin: 0 auto;
+            
+            /* ОРИГИНАЛЬНЫЙ ДИЗАЙН С ЛЕГКОЙ АНИМАЦИЕЙ */
+            background: var(--container-bg);
+            border-radius: var(--border-radius);
+            padding: var(--padding-base);
+            box-shadow: var(--shadow-main);
+            
+            backdrop-filter: blur(15px);
+            -webkit-backdrop-filter: blur(15px);
+            
+            /* ЛЕГКАЯ ПУЛЬСАЦИЯ ТЕНИ */
+            animation: containerGlow 10s ease infinite;
+        }
+
+        /* АДАПТИВНАЯ ТИПОГРАФИКА С ПРАВИЛЬНЫМИ РАЗМЕРАМИ */
+        h1 {
+            color: var(--primary-blue);
+            text-align: center;
+            font-size: var(--font-xlarge);
+            margin-bottom: var(--margin-base);
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+            font-weight: 700;
+            line-height: 1.2;
+        }
+
+        h2 {
+            color: var(--accent-red);
+            border-left: 4px solid var(--accent-red);
+            padding-left: var(--padding-small);
+            margin-top: clamp(25px, 6vw, 35px);
+            margin-bottom: var(--margin-base);
+            font-size: var(--font-large);
+            font-weight: 600;
+        }
+
+        h3 {
+            color: #2c3e50;
+            margin-top: clamp(20px, 5vw, 30px);
+            margin-bottom: clamp(12px, 3vw, 18px);
+            font-size: var(--font-base);
+            font-weight: 500;
+        }
+
+        p {
+            margin: clamp(10px, 3vw, 15px) 0;
+            line-height: 1.6;
+            font-size: var(--font-base);
+        }
+
+        /* КРАСИВЫЕ СТАТУС БЕЙДЖИ */
+        .status-badge {
+            display: inline-block;
+            padding: clamp(6px, 2vw, 8px) clamp(12px, 3vw, 16px);
+            border-radius: clamp(16px, 4vw, 24px);
+            font-size: var(--font-small);
+            font-weight: bold;
+            margin-left: clamp(8px, 2vw, 12px);
+            margin-top: clamp(4px, 1vw, 6px);
+            white-space: nowrap;
+            box-shadow: var(--shadow-light);
+            transform: translateY(-1px);
+        }
+
+        .ready {
+            background: var(--success-green);
+            color: white;
+        }
+
+        .coming {
+            background: var(--warning-orange);
+            color: white;
+        }
+
+        .future {
+            background: var(--future-purple);
+            color: white;
+        }
+
+        /* КРАСИВЫЕ ХАЙЛАЙТЫ С АНИМИРОВАННЫМ ГРАДИЕНТОМ */
+        .highlight {
+            /* ПОЛУПРОЗРАЧНЫЙ АНИМИРОВАННЫЙ ГРАДИЕНТ */
+            background: var(--animated-highlight);
+            background-size: 200% 200%;
+            animation: gradientShift 6s ease infinite;
+            
+            padding: var(--padding-base);
+            border-radius: var(--border-radius-small);
+            margin: var(--margin-base) 0;
+            border-left: 4px solid #ff6b6b;
+            box-shadow: var(--shadow-light);
+            position: relative;
+            overflow: hidden;
+            
+            /* ДОПОЛНИТЕЛЬНАЯ ПРОЗРАЧНОСТЬ ДЛЯ СМЕШИВАНИЯ С ФОНОМ */
+            backdrop-filter: blur(5px);
+            -webkit-backdrop-filter: blur(5px);
+        }
+
+        .highlight::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3px;
+            background: var(--animated-fire);
+            background-size: 400% 400%;
+            animation: gradientShift 4s ease infinite;
+        }
+
+        /* КРАСИВЫЕ КОМАНДЫ */
+        .command {
+            background: #4b3d6d;
+            color: #ecf0f1;
+            padding: clamp(8px, 2vw, 12px) clamp(12px, 3vw, 16px);
+            border-radius: clamp(6px, 2vw, 8px);
+            font-family: 'Arial Black', bold;
+            margin: clamp(3px, 1vw, 5px);
+            display: inline-block;
+            font-size: var(--font-small);
+            user-select: all;
+            -webkit-user-select: all;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .command:hover,
+        .command:active {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.3);
+            background: #72479a;
+        }
+
+        /* АДАПТИВНАЯ СЕТКА КОМАНД */
+        .command-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(clamp(160px, 40vw, 200px), 1fr));
+            gap: clamp(10px, 3vw, 15px);
+            margin: var(--margin-base) 0;
+        }
+
+        /* КРАСИВЫЕ СПИСКИ */
+        ul {
+            padding-left: clamp(20px, 5vw, 25px);
+            margin: var(--margin-base) 0;
+        }
+
+        li {
+            margin: clamp(8px, 2vw, 12px) 0;
+            line-height: 1.6;
+            font-size: var(--font-base);
+        }
+
+        /* АДАПТИВНЫЕ ЭМОДЗИ */
+        .emoji {
+            font-size: clamp(18px, 5vw, 22px);
+            vertical-align: middle;
+        }
+
+        h1 .emoji {
+            font-size: clamp(28px, 7vw, 36px);
+        }
+
+        h2 .emoji {
+            font-size: clamp(20px, 5vw, 24px);
+        }
+
+        /* КРАСИВЫЙ ФУТЕР */
+        .footer {
+            text-align: center;
+            margin-top: clamp(30px, 7vw, 40px);
+            padding-top: clamp(20px, 5vw, 25px);
+            border-top: 2px solid #ecf0f1;
+            color: #7f8c8d;
+            font-size: var(--font-small);
+        }
+
+        .footer a {
+            color: var(--primary-blue);
+            text-decoration: none;
+            transition: color 0.2s ease;
+        }
+
+        .footer a:hover {
+            color: var(--accent-red);
+        }
+
+        /* АНИМИРОВАННЫЙ ГРАДИЕНТНЫЙ ТЕКСТ */
+        .fire-text {
+            background: var(--animated-fire);
+            background-size: 400% 400%;
+            animation: gradientShift 5s ease infinite;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            font-weight: bold;
+            font-size: var(--font-base);
+        }
+
+        /* ИНТЕРАКТИВНЫЕ ЭЛЕМЕНТЫ */
+        .interactive {
+            cursor: pointer;
+            transition: all 0.2s ease;
+            user-select: none;
+        }
+
+        .interactive:active {
+            transform: scale(0.98);
+        }
+
+        /* АДАПТАЦИЯ ДЛЯ ОЧЕНЬ МАЛЕНЬКИХ ЭКРАНОВ */
+        @media (max-width: 360px) {
+            :root {
+                /* НА САМЫХ МАЛЕНЬКИХ ЭКРАНАХ ШРИФТ ЕЩЕ БОЛЬШЕ! */
+                --font-base: 18px;
+                --font-small: 16px;
+                --font-large: 22px;
+                --font-xlarge: 26px;
+            }
+            
+            .status-badge {
+                display: block;
+                margin: 8px 0;
+                text-align: center;
+            }
+            
+            .command-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        /* ПЛАНШЕТЫ */
+        @media (min-width: 768px) and (max-width: 1024px) {
+            .container {
+                max-width: 600px;
+                margin: 20px auto;
+            }
+            
+            .command-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* ДЕСКТОП */
+        @media (min-width: 1025px) {
+            :root {
+                /* НА БОЛЬШИХ ЭКРАНАХ ШРИФТ МЕНЬШЕ */
+                --font-base: 16px;
+                --font-small: 14px;
+                --font-large: 20px;
+                --font-xlarge: 28px;
+            }
+            
+            .container {
+                max-width: 800px;
+                margin: 20px auto;
+            }
+            
+            .command-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+
+        /* ТЕМНАЯ ТЕМА (если включена в Telegram) */
+        @media (prefers-color-scheme: dark) {
+            .container {
+                background: var(--container-bg-dark);
+                color: #ecf0f1;
+            }
+            
+            h3 {
+                color: #bdc3c7;
+            }
+            
+            .footer {
+                color: #95a5a6;
+                border-top-color: #34495e;
+            }
+        }
+
+        /* ТЕЛЕГРАМ ТЕМА (если пользователь предпочитает нативность) */
+        .telegram-theme {
+            background: var(--tg-theme-bg-color) !important;
+        }
+        
+        .telegram-theme .container {
+            background: var(--tg-theme-bg-color) !important;
+            color: var(--tg-theme-text-color) !important;
+            box-shadow: none !important;
+        }
+
+        /* АНИМАЦИИ */
+        .highlight, .command, .status-badge {
+            animation: fadeInUp 0.4s ease-out;
+        }
+
+        /* ОСНОВНАЯ АНИМАЦИЯ ГРАДИЕНТОВ */
+        @keyframes gradientShift {
+            0% {
+                background-position: 0% 50%;
+            }
+            50% {
+                background-position: 100% 50%;
+            }
+            100% {
+                background-position: 0% 50%;
+            }
+        }
+
+        /* АНИМАЦИЯ СВЕЧЕНИЯ КОНТЕЙНЕРА */
+        @keyframes containerGlow {
+            0%, 100% {
+                box-shadow: 0 clamp(8px, 2vw, 12px) clamp(25px, 6vw, 35px) rgba(0,0,0,0.3);
+            }
+            50% {
+                box-shadow: 0 clamp(10px, 2.5vw, 15px) clamp(30px, 7vw, 40px) rgba(102, 126, 234, 0.4);
+            }
+        }
+
+        /* ДОПОЛНИТЕЛЬНАЯ АНИМАЦИЯ ДЛЯ ПУЛЬСАЦИИ */
+        @keyframes gradientPulse {
+            0%, 100% {
+                background-position: 0% 50%;
+                filter: brightness(1);
+            }
+            50% {
+                background-position: 100% 50%;
+                filter: brightness(1.1);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(15px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* ПЛАВНАЯ ПРОКРУТКА */
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            -webkit-overflow-scrolling: touch;
+        }
+
+        /* ПУЛЬСИРУЮЩАЯ АНИМАЦИЯ ДЛЯ АКТИВНЫХ ЭЛЕМЕНТОВ */
+        .command.copied {
+            animation: pulse 0.6s ease-in-out;
+        }
+
+        @keyframes pulse {
+            0% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+            100% { transform: scale(1); }
+        }
+
+        /* УЛУЧШЕННЫЕ ТЕНИ ДЛЯ МОБАЙЛА */
+        @media (max-width: 768px) {
+            .container {
+                box-shadow: 0 8px 25px rgba(0,0,0,0.15);
+            }
+            
+            .highlight {
+                box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            }
+            
+            .command {
+                box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1><span class="emoji">🔥</span> Do Presave Reminder Bot <span class="emoji">🎵</span></h1>
+        <div style="text-align: center; margin-bottom: clamp(20px, 5vw, 25px);">
+            <strong class="fire-text">Твой личный помощник для музыкального хайпа!</strong>
+        </div>
+
+        <div class="highlight">
+            <strong><span class="emoji">⚡</span> Короче, бро!</strong> Этот бот - твоя секретная фишка для раскрутки треков! Он напоминает всем делать пресейвы друг другу, ведет статистику и вообще делает твою группу огненной командой поддержки! <span class="emoji">🚀</span>
+        </div>
+
+        <h2><span class="emoji">🎯</span> Что уже работает <span class="status-badge ready">ГОТОВО</span></h2>
+        
+        <h3><span class="emoji">🎛️</span> Умное меню</h3>
+        <p>Набираешь <span class="command interactive" onclick="copyToClipboard('/menu')">/menu</span> и попадаешь в крутое меню с кнопками! Никаких сложных команд - просто тыкаешь и получаешь то, что нужно. Меню работает 24/7 без глюков!</p>
+
+        <h3><span class="emoji">🔗</span> Автоматические напоминания</h3>
+        <p>Кинул ссылку на свой новый трек? Бот сразу же напомнит тебе: <em>"Йоу, не забудь сделать пресейв другим артистам!"</em> и покажет последние просьбы. Взаимовыручка - наше всё! <span class="emoji">🤝</span></p>
+
+        <h3><span class="emoji">📊</span> Базовая статистика</h3>
+        <ul>
+            <li><span class="command interactive" onclick="copyToClipboard('/mystat')">/mystat</span> - твоя личная статистика</li>
+            <li><span class="command interactive" onclick="copyToClipboard('/last10links')">/last10links</span> - последние 10 просьб о пресейвах</li>
+            <li><span class="command interactive" onclick="copyToClipboard('/last30links')">/last30links</span> - последние 30 просьб</li>
+        </ul>
+
+        <h3><span class="emoji">⚙️</span> Настройки для админов</h3>
+        <p>Админы могут переключать режимы работы бота, включать/выключать его и вообще контролировать всё через удобное меню. Никакой технической магии!</p>
+
+        <h2><span class="emoji">🔮</span> Что будет скоро</h2>
+
+        <h3><span class="emoji">🏆</span> Система кармы и званий <span class="status-badge coming">СКОРО</span></h3>
+        <p>Представь: делаешь пресейвы другим - получаешь карму! Карма растет - звание повышается! От <strong>"Новенького"</strong> до <strong>"Амбассадорища"</strong>! Топы по рейтингам, прогресс-бары, мотивация на максималках! <span class="emoji">🎮</span></p>
+
+        <h3><span class="emoji">📱</span> Интерактивные формы <span class="status-badge coming">СКОРО</span></h3>
+        <p>Больше никаких "напиши в чат"! Пошаговые формы для:</p>
+        <ul>
+            <li><strong>Просьбы о пресейве</strong> - заполнил форму, бот сам всё красиво оформил</li>
+            <li><strong>Заявки о сделанном пресейве</strong> - загрузил скрин, добавил комментарий, готово!</li>
+            <li><strong>Модерация заявок</strong> - админы проверяют и плюсуют карму</li>
+        </ul>
+
+        <h3><span class="emoji">🤖</span> ИИ-помощник <span class="status-badge coming">СКОРО</span></h3>
+        <p>Упомянул бота или ответил на его сообщение - он ответит как живой! Посоветует как продвигать трек, найдет инфу в интернете, поможет с музыкальными вопросами. Плюс автоматом будет ловить благодарности типа "спасибо", "огонь", "круто" и плюсовать карму! <span class="emoji">🧠</span></p>
+
+        <h3><span class="emoji">💾</span> Система backup <span class="status-badge future">В ПЛАНАХ</span></h3>
+        <p>Чтобы никогда не потерять данные пользователей. Автоматические бэкапы, восстановление одной кнопкой. Технически сложно, но для пользователей - просто и надежно.</p>
+
+        <h2><span class="emoji">📍</span> Где работает бот</h2>
+        
+        <h3><span class="emoji">💬</span> В личке</h3>
+        <p>Если ты админ - работают ВСЕ команды. Если нет - бот скажет "Сорри, бро, доступ только для админов!" <span class="emoji">😉</span></p>
+
+        <h3><span class="emoji">🏢</span> В супергруппе</h3>
+        <p>Работает только в разрешенных топиках:</p>
+        <ul>
+            <li><strong>Топик #2</strong> - Болталка (для флуда)</li>
+            <li><strong>Топик #3</strong> - Поддержка пресейвом (основной)</li>
+        </ul>
+
+        <h2><span class="emoji">🚀</span> Основные команды</h2>
+        
+        <div class="command-grid">
+            <div><span class="command interactive" onclick="copyToClipboard('/menu')">/menu</span> - главное меню</div>
+            <div><span class="command interactive" onclick="copyToClipboard('/help')">/help</span> - все команды</div>
+            <div><span class="command interactive" onclick="copyToClipboard('/mystat')">/mystat</span> - твоя статистика</div>
+            <div><span class="command interactive" onclick="copyToClipboard('/last10links')">/last10links</span> - свежие просьбы</div>
+        </div>
+
+        <div class="highlight">
+            <strong><span class="emoji">💡</span> Лайфхак:</strong> Чем больше помогаешь другим с пресейвами, тем больше помогают тебе! Это не просто бот - это целая экосистема взаимной поддержки музыкантов! <span class="emoji">🎵</span>
+        </div>
+
+        <h2><span class="emoji">🔥</span> Почему это огонь?</h2>
+        <ul>
+            <li><strong>Геймификация</strong> - превращает скучные пресейвы в игру с рейтингами!</li>
+            <li><strong>Автоматизация</strong> - бот сам всё помнит и напоминает</li>
+            <li><strong>Сообщество</strong> - объединяет музыкантов в команду поддержки</li>
+            <li><strong>Мотивация</strong> - звания и карма заставляют помогать друг другу</li>
+        </ul>
+
+        <div class="footer">
+            <p><strong>Версия:</strong> v25.1 → v26-v27 скоро!</p>
+            <p><strong>Разработчик:</strong> <a href="https://t.me/Mister_DMS">@Mister_DMS</a></p>
+            <p><span class="emoji">🎵</span> <em>Удачи в продвижении треков, бро!</em> <span class="emoji">🚀</span></p>
+        </div>
+    </div>
+
+    <script>
+        // ИНИЦИАЛИЗАЦИЯ TELEGRAM WEB APP
+        let isTelegramWebApp = false;
+        
+        try {
+            if (window.Telegram && window.Telegram.WebApp) {
+                window.Telegram.WebApp.ready();
+                window.Telegram.WebApp.expand();
+                isTelegramWebApp = true;
+                
+                // ПРИМЕНЯЕМ TELEGRAM ТЕМУ (ОПЦИОНАЛЬНО)
+                if (window.Telegram.WebApp.themeParams.bg_color) {
+                    // Пользователь может переключиться на telegram-тему двойным тапом
+                    document.addEventListener('dblclick', toggleTelegramTheme);
+                }
+                
+                // НАСТРОЙКА ГЛАВНОЙ КНОПКИ
+                window.Telegram.WebApp.MainButton.setText('📱 Открыть бота');
+                window.Telegram.WebApp.MainButton.color = '#4a50e2';
+                window.Telegram.WebApp.MainButton.textColor = '#ffffff';
+                window.Telegram.WebApp.MainButton.show();
+                
+                window.Telegram.WebApp.MainButton.onClick(() => {
+                    window.Telegram.WebApp.close();
+                });
+            }
+        } catch (e) {
+            console.log('Not in Telegram WebApp environment');
+        }
+
+        // ПЕРЕКЛЮЧЕНИЕ МЕЖДУ КРАСИВОЙ И TELEGRAM ТЕМОЙ
+        let isOriginalTheme = true;
+        
+        function toggleTelegramTheme() {
+            if (!isTelegramWebApp) return;
+            
+            const body = document.body;
+            
+            if (isOriginalTheme) {
+                // Переключаемся на Telegram тему
+                body.classList.add('telegram-theme');
+                if (window.Telegram.WebApp.HapticFeedback) {
+                    window.Telegram.WebApp.HapticFeedback.impactOccurred('medium');
+                }
+                showNotification('🎨 Telegram тема включена! Двойной тап для возврата.');
+            } else {
+                // Возвращаемся к оригинальной теме
+                body.classList.remove('telegram-theme');
+                if (window.Telegram.WebApp.HapticFeedback) {
+                    window.Telegram.WebApp.HapticFeedback.impactOccurred('light');
+                }
+                showNotification('🔥 Оригинальная тема включена!');
+            }
+            
+            isOriginalTheme = !isOriginalTheme;
+        }
+
+        // КОПИРОВАНИЕ КОМАНД С КРАСИВОЙ АНИМАЦИЕЙ
+        function copyToClipboard(text) {
+            // ТАКТИЛЬНАЯ ОБРАТНАЯ СВЯЗЬ
+            if (isTelegramWebApp && window.Telegram.WebApp.HapticFeedback) {
+                window.Telegram.WebApp.HapticFeedback.impactOccurred('light');
+            }
+            
+            // НАХОДИМ ЭЛЕМЕНТ И ДОБАВЛЯЕМ АНИМАЦИЮ
+            const commandElements = document.querySelectorAll('.command');
+            commandElements.forEach(el => {
+                if (el.textContent.includes(text)) {
+                    el.classList.add('copied');
+                    setTimeout(() => el.classList.remove('copied'), 600);
+                }
+            });
+            
+            // КОПИРОВАНИЕ ТЕКСТА
+            navigator.clipboard.writeText(text).then(function() {
+                showNotification(`✅ Команда "${text}" скопирована!`);
+            }).catch(function() {
+                // FALLBACK ДЛЯ СТАРЫХ БРАУЗЕРОВ
+                const textArea = document.createElement('textarea');
+                textArea.value = text;
+                textArea.style.position = 'fixed';
+                textArea.style.opacity = '0';
+                document.body.appendChild(textArea);
+                textArea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textArea);
+                
+                showNotification(`✅ Команда "${text}" скопирована!`);
+            });
+        }
+
+        // ПОКАЗ УВЕДОМЛЕНИЙ
+        function showNotification(message) {
+            if (isTelegramWebApp && window.Telegram.WebApp.showAlert) {
+                window.Telegram.WebApp.showAlert(message);
+            } else {
+                // Создаем красивое уведомление для обычного браузера
+                const notification = document.createElement('div');
+                notification.textContent = message;
+                notification.style.cssText = `
+                    position: fixed;
+                    top: 20px;
+                    right: 20px;
+                    background: linear-gradient(45deg, #667eea, #764ba2);
+                    color: white;
+                    padding: 12px 20px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    z-index: 10000;
+                    font-size: 14px;
+                    font-weight: 500;
+                    animation: slideInRight 0.3s ease-out;
+                `;
+                
+                document.body.appendChild(notification);
+                
+                setTimeout(() => {
+                    notification.style.animation = 'slideOutRight 0.3s ease-in forwards';
+                    setTimeout(() => document.body.removeChild(notification), 300);
+                }, 2000);
+            }
+        }
+
+        // ПЛАВНАЯ АНИМАЦИЯ ПОЯВЛЕНИЯ ЭЛЕМЕНТОВ
+        function animateElements() {
+            const elements = document.querySelectorAll('.highlight, .command, .status-badge');
+            elements.forEach((el, index) => {
+                el.style.animationDelay = `${index * 0.1}s`;
+            });
+        }
+
+        // ДОБАВЛЯЕМ CSS ДЛЯ АНИМАЦИЙ УВЕДОМЛЕНИЙ
+        const style = document.createElement('style');
+        style.textContent = `
+            @keyframes slideInRight {
+                from { transform: translateX(100%); opacity: 0; }
+                to { transform: translateX(0); opacity: 1; }
+            }
+            @keyframes slideOutRight {
+                from { transform: translateX(0); opacity: 1; }
+                to { transform: translateX(100%); opacity: 0; }
+            }
+        `;
+        document.head.appendChild(style);
+
+        // ЗАПУСКАЕМ ВСЕ ПРИ ЗАГРУЗКЕ
+        document.addEventListener('DOMContentLoaded', () => {
+            animateElements();
+            
+            // Показываем приветствие
+            setTimeout(() => {
+                if (isTelegramWebApp) {
+                    showNotification('🔥 Web App загружен! Двойной тап для смены темы.');
+                } else {
+                    showNotification('💻 Привет! Это версия для браузера.');
+                }
+            }, 1000);
+        });
+
+        // ОТСЛЕЖИВАНИЕ ВЗАИМОДЕЙСТВИЙ
+        function trackInteraction(action) {
+            if (isTelegramWebApp && window.Telegram.WebApp.sendData) {
+                // Отправляем аналитику обратно в бота
+                const data = {
+                    action: action,
+                    timestamp: Date.now(),
+                    viewport: {
+                        width: window.innerWidth,
+                        height: window.innerHeight
+                    },
+                    theme: isOriginalTheme ? 'original' : 'telegram'
+                };
+                
+                window.Telegram.WebApp.sendData(JSON.stringify(data));
+            }
+        }
+
+        // АВТОМАТИЧЕСКОЕ ОТСЛЕЖИВАНИЕ КЛИКОВ ПО КОМАНДАМ
+        document.addEventListener('click', (e) => {
+            if (e.target.classList.contains('command')) {
+                trackInteraction('command_click');
+            }
+        });
+    </script>
+</body>
+</html>
