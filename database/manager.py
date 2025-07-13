@@ -164,7 +164,7 @@ class DatabaseManager:
                 
         except Exception as e:
             logger.error(f"❌ Ошибка инициализации настроек: {e}")
-    
+
     def close(self):
         """Закрытие соединений с БД"""
         try:
@@ -172,7 +172,70 @@ class DatabaseManager:
             logger.info("✅ Соединения с БД закрыты")
         except Exception as e:
             logger.error(f"❌ Ошибка закрытия БД: {e}")
-    
+
+    def get_recent_links_safe(self, limit: int = 10) -> List[dict]:
+        """Безопасное получение последних ссылок как словарей"""
+        try:
+            with self.get_session() as session:
+                # Получаем ссылки с JOIN к пользователям для одного запроса
+                query = session.query(Link, User).join(User, Link.user_id == User.user_id, isouter=True)\
+                              .filter(Link.is_active == True)\
+                              .order_by(Link.created_at.desc())\
+                              .limit(limit)
+                
+                results = query.all()
+                
+                # Преобразуем в словари для избежания проблем с сессией
+                safe_links = []
+                for link, user in results:
+                    safe_links.append({
+                        'id': link.id,
+                        'user_id': link.user_id,
+                        'username': user.username if user else None,
+                        'first_name': user.first_name if user else None,
+                        'url': link.url,
+                        'created_at': link.created_at,
+                        'thread_id': getattr(link, 'thread_id', None)
+                    })
+                
+                logger.info(f"✅ Загружено {len(safe_links)} ссылок (безопасный метод)")
+                return safe_links
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_recent_links_safe: {e}")
+            return []
+
+    def get_recent_links_safe(self, limit: int = 10) -> List[dict]:
+        """Безопасное получение последних ссылок как словарей (исправляет проблему сессии)"""
+        try:
+            with self.session_scope() as session:
+                # Получаем ссылки с JOIN к пользователям для одного запроса
+                query = session.query(Link, User).join(User, Link.user_id == User.id, isouter=True)\
+                              .order_by(Link.created_at.desc())\
+                              .limit(limit)
+                
+                results = query.all()
+                
+                # Преобразуем в словари для избежания проблем с сессией
+                safe_links = []
+                for link, user in results:
+                    safe_links.append({
+                        'id': link.id,
+                        'user_id': link.user_id,
+                        'username': user.username if user else None,
+                        'first_name': user.first_name if user else None,
+                        'url': link.url,
+                        'created_at': link.created_at,
+                        'thread_id': getattr(link, 'thread_id', None)
+                    })
+                
+                logger.info(f"✅ Загружено {len(safe_links)} ссылок (безопасный метод)")
+                return safe_links
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_recent_links_safe: {e}")
+            return []
+
     # ============================================
     # ПЛАН 1: CRUD ОПЕРАЦИИ ДЛЯ БАЗОВЫХ МОДЕЛЕЙ
     # ============================================
@@ -534,7 +597,22 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"❌ Ошибка get_user_stats: {e}")
             return {}
-    
+
+    def get_links_by_user_id(self, user_id: int, limit: int = 10):
+        """Получение ссылок пользователя по ID (для menu.py)"""
+        try:
+            with self.get_session() as session:
+                links = session.query(Link).filter(
+                    Link.user_id == user_id,
+                    Link.is_active == True
+                ).order_by(Link.created_at.desc()).limit(limit).all()
+                
+                return links
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка get_links_by_user_id: {e}")
+            return []
+
     # ============================================
     # ПЛАН 2: CRUD ДЛЯ СИСТЕМЫ КАРМЫ (ЗАГЛУШКИ)
     # ============================================
