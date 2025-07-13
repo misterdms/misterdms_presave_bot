@@ -1,4 +1,5 @@
-pyTelegramBotAPI==4.22.1
+pyTelegramBotAPI==4.27.0  # Было: 4.22.1
+# pyTelegramBotAPI==4.22.1
 python-dotenv==1.0.0  
 psycopg2-binary==2.9.10
 sqlalchemy==2.0.36
