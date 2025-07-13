@@ -103,7 +103,7 @@ class CallbackHandler:
             
         # Статистика пользователя - делегируем в MenuHandler
         mystats_callbacks = [
-            'mystats_links', 'mystats_activity', 'mystats_rating'
+            'mystats_my_links', 'mystats_daily_activity', 'mystats_my_ranking'
         ]
 
         for callback in mystats_callbacks:

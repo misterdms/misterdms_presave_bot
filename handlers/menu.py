@@ -909,11 +909,11 @@ class MenuHandler:
         data = callback_query.data
         user_id = callback_query.from_user.id
         
-        if data == 'mystats_links':
+        if data == 'mystats_my_links':
             self._show_user_links(callback_query, user_id)
-        elif data == 'mystats_activity':
+        elif data == 'mystats_daily_activity':
             self._show_user_activity(callback_query, user_id)
-        elif data == 'mystats_rating':
+        elif data == 'mystats_my_ranking':
             self._show_user_rating(callback_query, user_id)
         else:
             self.bot.answer_callback_query(
