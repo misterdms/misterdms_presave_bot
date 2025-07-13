@@ -234,14 +234,16 @@ class CommandHandler:
             self.bot.send_message(
                 message.chat.id,
                 welcome_text,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_start: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при выполнении команды /start"
+                "❌ Ошибка при выполнении команды /start",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     def cmd_help(self, message: Message):
@@ -313,14 +315,16 @@ class CommandHandler:
             self.bot.send_message(
                 message.chat.id,
                 help_text,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_help: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при получении справки"
+                "❌ Ошибка при получении справки",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     def cmd_mystat(self, message: Message):
@@ -335,7 +339,8 @@ class CommandHandler:
             if not stats:
                 self.bot.send_message(
                     message.chat.id,
-                    "❌ Не удалось получить статистику. Используйте /start для регистрации."
+                    "❌ Не удалось получить статистику. Используйте /start для регистрации.",
+                    message_thread_id=thread_id
                 )
                 return
             
@@ -397,14 +402,16 @@ class CommandHandler:
             self.bot.send_message(
                 message.chat.id,
                 "\n".join(stat_parts),
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_mystat: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при получении статистики"
+                "❌ Ошибка при получении статистики",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     def cmd_last10links(self, message: Message):
@@ -428,7 +435,8 @@ class CommandHandler:
                 self.bot.send_message(
                     message.chat.id,
                     f"📎 <b>Последние {count} ссылок</b>\n\n🤷 Ссылок пока нет в базе данных.",
-                    parse_mode='HTML'
+                    parse_mode='HTML',
+                    message_thread_id=thread_id
                 )
                 return
             
@@ -456,7 +464,8 @@ class CommandHandler:
                 self.bot.send_message(
                     message.chat.id,
                     full_text,
-                    parse_mode='HTML'
+                    parse_mode='HTML',
+                    message_thread_id=thread_id
                 )
             else:
                 # Отправляем по частям
@@ -466,14 +475,16 @@ class CommandHandler:
                     self.bot.send_message(
                         message.chat.id,
                         chunk,
-                        parse_mode='HTML'
+                        parse_mode='HTML',
+                        message_thread_id=thread_id
                     )
             
         except Exception as e:
             logger.error(f"❌ Ошибка _show_recent_links: {e}")
             self.bot.send_message(
                 message.chat.id,
-                f"❌ Ошибка при получении последних {count} ссылок"
+                f"❌ Ошибка при получении последних {count} ссылок",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     # ============================================
@@ -494,14 +505,16 @@ class CommandHandler:
             self.bot.send_message(
                 message.chat.id,
                 "✅ <b>Бот активирован!</b>\n\nВсе функции включены и готовы к работе.",
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_enablebot: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при активации бота"
+                "❌ Ошибка при активации бота",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     @admin_required
@@ -518,14 +531,16 @@ class CommandHandler:
             self.bot.send_message(
                 message.chat.id,
                 "⏸️ <b>Бот деактивирован!</b>\n\nБот временно приостановлен. Для включения используйте /enablebot",
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_disablebot: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при деактивации бота"
+                "❌ Ошибка при деактивации бота",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     # ============================================
@@ -572,7 +587,8 @@ class CommandHandler:
             if mode not in mode_configs:
                 self.bot.send_message(
                     message.chat.id,
-                    "❌ Неизвестный режим лимитов"
+                    "❌ Неизвестный режим лимитов",
+                    message_thread_id=thread_id
                 )
                 return
             
@@ -591,14 +607,16 @@ class CommandHandler:
                 f"📊 <b>Лимиты:</b> {config['max_hour']} запросов/час\n"
                 f"⏱️ <b>Cooldown:</b> {config['cooldown']} секунд\n\n"
                 f"Изменения применены немедленно.",
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка _set_limit_mode: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при изменении режима лимитов"
+                "❌ Ошибка при изменении режима лимитов",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     @admin_required
@@ -624,14 +642,16 @@ class CommandHandler:
                 f"🎯 <b>Лимит:</b> {config['max_hour']} запросов в час\n"
                 f"⏱️ <b>Cooldown:</b> {config['cooldown']} секунд между запросами\n\n"
                 f"💡 Для смены режима используйте команды /setmode_*",
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_currentmode: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при получении текущего режима"
+                "❌ Ошибка при получении текущего режима",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     # ============================================
@@ -654,7 +674,8 @@ class CommandHandler:
                     "<code>/linksby @username</code>\n\n"
                     "💡 <b>Пример:</b>\n"
                     "<code>/linksby @testuser</code>",
-                    parse_mode='HTML'
+                    parse_mode='HTML',
+                    message_thread_id=thread_id
                 )
                 return
             
@@ -668,7 +689,8 @@ class CommandHandler:
                     message.chat.id,
                     f"🔍 <b>Ссылки пользователя @{username}</b>\n\n"
                     f"🤷 Пользователь не найден или у него нет ссылок.",
-                    parse_mode='HTML'
+                    parse_mode='HTML',
+                    message_thread_id=thread_id
                 )
                 return
             
@@ -696,14 +718,16 @@ class CommandHandler:
             self.bot.send_message(
                 message.chat.id,
                 "\n".join(text_parts),
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_linksby: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка при получении ссылок пользователя"
+                "❌ Ошибка при получении ссылок пользователя",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     @admin_required
@@ -733,14 +757,16 @@ class CommandHandler:
                     "🎵 <b>Do Presave Reminder Bot v25+</b>\n\n"
                     "📱 Главное меню временно недоступно.\n"
                     "Попробуйте /resetmenu",
-                    parse_mode='HTML'
+                    parse_mode='HTML',
+                    message_thread_id=thread_id
                 )
                         
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_menu: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка открытия меню. Попробуйте /resetmenu"
+                "❌ Ошибка открытия меню. Попробуйте /resetmenu",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
         
     @admin_required
@@ -770,14 +796,16 @@ class CommandHandler:
                     "🔄 <b>Меню сброшено!</b>\n\n"
                     "Восстановление функционала...\n"
                     "Попробуйте снова /menu",
-                    parse_mode='HTML'
+                    parse_mode='HTML',
+                    message_thread_id=thread_id
                 )
                     
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_resetmenu: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка сброса меню. Обратитесь к разработчику."
+                "❌ Ошибка сброса меню. Обратитесь к разработчику.",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
 
     # ============================================
@@ -800,7 +828,8 @@ class CommandHandler:
     #                 "💡 <b>Примеры:</b>\n"
     #                 "<code>/karma @testuser +5</code>\n"
     #                 "<code>/karma @testuser -2</code>",
-    #                 parse_mode='HTML'
+    #                 parse_mode='HTML',
+    #                 message_thread_id=thread_id
     #             )
     #             return
     #         
@@ -812,7 +841,8 @@ class CommandHandler:
     #         if karma_change is None:
     #             self.bot.send_message(
     #                 message.chat.id,
-    #                 "❌ Неверное количество кармы! Используйте числа от -1000 до +1000."
+    #                 "❌ Неверное количество кармы! Используйте числа от -1000 до +1000.",
+    #                 message_thread_id=thread_id
     #             )
     #             return
     #         
@@ -821,7 +851,8 @@ class CommandHandler:
     #         if not target_user:
     #             self.bot.send_message(
     #                 message.chat.id,
-    #                 f"❌ Пользователь @{target_username} не найден в базе данных."
+    #                 f"❌ Пользователь @{target_username} не найден в базе данных.",
+    #                 message_thread_id=thread_id
     #             )
     #             return
     #         
@@ -843,21 +874,24 @@ class CommandHandler:
     #                 f"🔄 <b>Изменение:</b> {change_str}\n"
     #                 f"🏆 <b>Было:</b> {old_karma} → <b>Стало:</b> {new_karma}\n"
     #                 f"🎖️ <b>Звание:</b> {self.db.get_user_rank(target_user.user_id)}",
-    #                 parse_mode='HTML'
+    #                 parse_mode='HTML',
+    #                 message_thread_id=thread_id
     #             )
     #             
     #             log_admin_action(logger, user_id, f"изменил карму @{target_username}: {old_karma}→{new_karma}")
     #         else:
     #             self.bot.send_message(
     #                 message.chat.id,
-    #                 "❌ Ошибка при изменении кармы"
+    #                 "❌ Ошибка при изменении кармы",
+    #                 message_thread_id=thread_id
     #             )
     #             
     #     except Exception as e:
     #         logger.error(f"❌ Ошибка cmd_karma: {e}")
     #         self.bot.send_message(
     #             message.chat.id,
-    #             "❌ Ошибка при выполнении команды /karma"
+    #             "❌ Ошибка при выполнении команды /karma",
+    #             message_thread_id=getattr(message, 'message_thread_id', None)
     #         )
     
     # ============================================
@@ -877,7 +911,8 @@ class CommandHandler:
     #         logger.error(f"❌ Ошибка cmd_askpresave: {e}")
     #         self.bot.send_message(
     #             message.chat.id,
-    #             "❌ Ошибка при запуске формы пресейва"
+    #             "❌ Ошибка при запуске формы пресейва",
+    #             message_thread_id=getattr(message, 'message_thread_id', None)
     #         )
     
     # ============================================
@@ -892,7 +927,8 @@ class CommandHandler:
     #         if message.chat.type != 'private':
     #             self.bot.send_message(
     #                 message.chat.id,
-    #                 "❌ Команда /downloadsql доступна только в личных сообщениях боту!"
+    #                 "❌ Команда /downloadsql доступна только в личных сообщениях боту!",
+    #                 message_thread_id=thread_id
     #             )
     #             return
     #         
@@ -916,7 +952,8 @@ class CommandHandler:
     #         logger.error(f"❌ Ошибка cmd_downloadsql: {e}")
     #         self.bot.send_message(
     #             message.chat.id,
-    #             "❌ Ошибка при создании backup"
+    #             "❌ Ошибка при создании backup",
+    #             message_thread_id=getattr(message, 'message_thread_id', None)
     #         )
 
 
