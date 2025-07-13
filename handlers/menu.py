@@ -119,10 +119,10 @@ class MenuHandler:
                 'title': '⚡ Режимы лимитов API',
                 'description': 'Управление скоростью обращений к Telegram API',
                 'buttons': [
-                    ('🐌 Conservative', 'limit_conservative'),
-                    ('⚡ Normal', 'limit_normal'),
-                    ('🚀 Burst (по умолчанию)', 'limit_burst'),
-                    ('⚡⚡ Admin Burst', 'limit_admin_burst'),
+                    ('🟠 Консерва', 'limit_conservative'),
+                    ('🟡 Покатит', 'limit_normal'),
+                    ('🟢 Живенько', 'limit_burst'),
+                    ('🔵 пИчОт!', 'limit_admin_burst'),
                     ('📊 Текущий режим', 'action_current_mode'),
                     ('🔙 Назад', 'menu_settings'),
                     ('🏠 Главное меню', 'menu_main')
@@ -191,10 +191,18 @@ class MenuHandler:
         menu = self.menu_structure[menu_key]
         keyboard = InlineKeyboardMarkup(row_width=1)
         
+        # Получаем текущий режим для индикации активного
+        current_mode = self.db.get_setting('current_limit_mode', 'BURST') if menu_key == 'limits' else None
+        
         for button_text, callback_data in menu['buttons']:
             # Проверяем доступность функций планов
             if self._is_button_available(callback_data):
-                keyboard.add(InlineKeyboardButton(button_text, callback_data=callback_data))
+                # Для меню лимитов добавляем индикатор активного режима
+                display_text = button_text
+                if menu_key == 'limits' and self._is_active_limit_mode(callback_data, current_mode):
+                    display_text = f"👉🏻 {button_text}"
+                
+                keyboard.add(InlineKeyboardButton(display_text, callback_data=callback_data))
             else:
                 # Показываем кнопку "в разработке"
                 dev_text = f"{button_text} (в разработке)"
@@ -299,7 +307,18 @@ class MenuHandler:
             'ADMIN_BURST': '⚡⚡'
         }
         return emoji_map.get(mode, '🚀')
-    
+
+    def _is_active_limit_mode(self, callback_data: str, current_mode: str) -> bool:
+        """Проверка является ли режим лимитов активным"""
+        mode_mapping = {
+            'limit_conservative': 'CONSERVATIVE',
+            'limit_normal': 'NORMAL',
+            'limit_burst': 'BURST',
+            'limit_admin_burst': 'ADMIN_BURST'
+        }
+        
+        return mode_mapping.get(callback_data) == current_mode
+
     # ============================================
     # КОМАНДЫ МЕНЮ
     # ============================================
