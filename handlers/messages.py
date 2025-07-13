@@ -14,7 +14,7 @@ import telebot
 from telebot.types import Message
 
 from database.manager import DatabaseManager
-from utils.security import SecurityManager, whitelist_required
+from utils.security import SecurityManager
 from utils.logger import get_logger, log_user_action
 from handlers.links import LinkHandler
 
@@ -34,7 +34,8 @@ class MessageHandler:
         
         # Паттерны для обработки
         self.url_pattern = re.compile(
-            r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+            r'https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?',
+            re.IGNORECASE
         )
         
         # ПЛАН 3: Паттерны для ИИ (ЗАГЛУШКИ)
@@ -101,6 +102,9 @@ class MessageHandler:
             thread_id = getattr(message, 'message_thread_id', None)
             text = message.text or ""
             
+            # ДИАГНОСТИЧЕСКИЙ ЛОГ
+            logger.info(f"📝 ОБРАБОТКА СООБЩЕНИЯ: user_id={user_id}, chat_type={chat_type}, thread_id={thread_id}, text='{text[:50]}...'")
+            
             # Пропускаем команды (они обрабатываются отдельно)
             if text.startswith('/'):
                 return
@@ -164,16 +168,25 @@ class MessageHandler:
         except Exception as e:
             logger.error(f"❌ Ошибка _handle_private_message: {e}")
     
-    @whitelist_required
     def _handle_group_message(self, message: Message):
         """Обработка сообщения в группе"""
         try:
             user_id = message.from_user.id
             text = message.text
             thread_id = getattr(message, 'message_thread_id', None)
+            has_urls = self._contains_urls(text)
+            
+            # ДИАГНОСТИКА - подробная информация о сообщении в группе
+            logger.info(f"🔍 ДИАГНОСТИКА GROUP MESSAGE:")
+            logger.info(f"  user_id: {user_id}")
+            logger.info(f"  thread_id: {thread_id}")  
+            logger.info(f"  text: '{text[:100]}...'")
+            logger.info(f"  has_urls: {has_urls}")
+            logger.info(f"  link_handler готов: {self.is_link_handler_ready()}")
             
             # Проверяем включен ли бот
             if not self.db.get_setting('bot_enabled', True):
+                logger.info("🔒 Бот отключен, игнорируем сообщения")
                 return  # Бот отключен, игнорируем сообщения
             
             # ПЛАН 3: Проверка на упоминание бота (ЗАГЛУШКА)
@@ -191,7 +204,8 @@ class MessageHandler:
             #     self._handle_gratitude_message(message)
             
             # ПЛАН 1: Обработка ссылок (АКТИВНАЯ)
-            if self._contains_urls(text):
+            if has_urls:
+                logger.info(f"🔗 Обнаружены URL в сообщении, передаем в LinkHandler")
                 self._handle_message_with_links(message)
                 return
             
@@ -203,12 +217,15 @@ class MessageHandler:
     
     def _contains_urls(self, text: str) -> bool:
         """Проверка содержит ли текст URLs"""
-        return bool(self.url_pattern.search(text))
+        result = bool(self.url_pattern.search(text))
+        logger.info(f"🔍 _contains_urls: '{text[:30]}...' -> {result}")
+        return result
     
     def _handle_message_with_links(self, message: Message):
         """Обработка сообщения со ссылками"""
         try:
             if self.link_handler:
+                logger.info(f"✅ Делегируем обработку ссылок в LinkHandler")
                 # Делегируем обработку ссылок в LinkHandler
                 self.link_handler.handle_link_message(message)
             else:

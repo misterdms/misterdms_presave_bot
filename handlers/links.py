@@ -33,9 +33,16 @@ class LinkHandler:
         self.security = security_manager
         self.config = config
         
-        # Паттерны для обнаружения ссылок
+        # КРИТИЧЕСКАЯ ПРОВЕРКА: инициализация WHITELIST
+        if not hasattr(self.security, 'whitelist_threads'):
+            logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: SecurityManager.whitelist_threads не инициализирован!")
+            self.security.whitelist_threads = self.config.WHITELIST if hasattr(self.config, 'WHITELIST') else []
+            logger.info(f"✅ Принудительно установлен WHITELIST: {self.security.whitelist_threads}")
+        
+        # Паттерны для обнаружения ссылок (улучшенный регекс)
         self.url_pattern = re.compile(
-            r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+'
+            r'https?://(?:[-\w.])+(?:[:\d]+)?(?:/(?:[\w/_.])*(?:\?(?:[\w&=%.])*)?(?:\#(?:[\w.])*)?)?',
+            re.IGNORECASE
         )
         
         # Специальные паттерны для пресейв ссылок
@@ -58,20 +65,32 @@ class LinkHandler:
             thread_id = getattr(message, 'message_thread_id', None)
             message_id = message.message_id
             
+            # ДИАГНОСТИЧЕСКИЙ ЛОГ
+            logger.info(f"🔗 ВЫЗВАН handle_link_message: user_id={user_id}, thread_id={thread_id}, text='{text[:100]}...'")
+            
             # Проверяем включен ли бот
             if not self.db.get_setting('bot_enabled', True):
                 logger.info("Бот отключен, игнорируем ссылки")
                 return
             
             # Проверяем разрешенные топики
-            if thread_id not in self.security.whitelist_threads:
-                logger.info(f"Ссылка в неразрешенном топике {thread_id} проигнорирована")
+            whitelist_threads = getattr(self.security, 'whitelist_threads', [])
+            if not whitelist_threads:
+                # Если whitelist пустой, берем из config
+                whitelist_threads = getattr(self.config, 'WHITELIST', [])
+                logger.warning(f"⚠️ WHITELIST взят из config: {whitelist_threads}")
+
+            if thread_id and thread_id not in whitelist_threads:
+                logger.info(f"Ссылка в неразрешенном топике {thread_id} проигнорирована (WHITELIST: {whitelist_threads})")
                 return
+
+            logger.info(f"✅ Ссылка в разрешенном топике {thread_id} (WHITELIST: {whitelist_threads})")
             
             # Извлекаем ссылки из сообщения
             urls = self._extract_urls(text)
             
             if not urls:
+                logger.info(f"🔍 В сообщении не найдено валидных URL")
                 return
             
             log_user_action(logger, user_id, f"опубликовал {len(urls)} ссылок в топике {thread_id}")
@@ -107,6 +126,7 @@ class LinkHandler:
                 if self._is_valid_url(url):
                     cleaned_urls.append(url)
             
+            logger.info(f"🔍 Извлечено {len(cleaned_urls)} валидных URL из {len(urls)} найденных")
             return cleaned_urls
             
         except Exception as e:
@@ -146,7 +166,7 @@ class LinkHandler:
                     thread_id=thread_id
                 )
             
-            logger.info(f"Сохранено {len(urls)} ссылок от пользователя {user_id}")
+            logger.info(f"✅ Сохранено {len(urls)} ссылок от пользователя {user_id}")
             
         except Exception as e:
             logger.error(f"❌ Ошибка _save_links_to_database: {e}")
@@ -162,6 +182,7 @@ class LinkHandler:
             # Добавляем задержку
             delay = self.config.RESPONSE_DELAY
             if delay > 0:
+                logger.info(f"⏳ Задержка перед отправкой напоминания: {delay} сек")
                 time.sleep(delay)
             
             # Получаем текст напоминания
