@@ -174,43 +174,12 @@ class DatabaseManager:
             logger.error(f"❌ Ошибка закрытия БД: {e}")
 
     def get_recent_links_safe(self, limit: int = 10) -> List[dict]:
-        """Безопасное получение последних ссылок как словарей"""
+        """Безопасное получение последних ссылок как словарей (исправляет проблему сессии)"""
         try:
             with self.get_session() as session:
                 # Получаем ссылки с JOIN к пользователям для одного запроса
-                query = session.query(Link, User).join(User, Link.user_id == User.user_id, isouter=True)\
+                query = session.query(Link, User).outerjoin(User, Link.user_id == User.user_id)\
                               .filter(Link.is_active == True)\
-                              .order_by(Link.created_at.desc())\
-                              .limit(limit)
-                
-                results = query.all()
-                
-                # Преобразуем в словари для избежания проблем с сессией
-                safe_links = []
-                for link, user in results:
-                    safe_links.append({
-                        'id': link.id,
-                        'user_id': link.user_id,
-                        'username': user.username if user else None,
-                        'first_name': user.first_name if user else None,
-                        'url': link.url,
-                        'created_at': link.created_at,
-                        'thread_id': getattr(link, 'thread_id', None)
-                    })
-                
-                logger.info(f"✅ Загружено {len(safe_links)} ссылок (безопасный метод)")
-                return safe_links
-                
-        except Exception as e:
-            logger.error(f"❌ Ошибка get_recent_links_safe: {e}")
-            return []
-
-    def get_recent_links_safe(self, limit: int = 10) -> List[dict]:
-        """Безопасное получение последних ссылок как словарей (исправляет проблему сессии)"""
-        try:
-            with self.session_scope() as session:
-                # Получаем ссылки с JOIN к пользователям для одного запроса
-                query = session.query(Link, User).join(User, Link.user_id == User.id, isouter=True)\
                               .order_by(Link.created_at.desc())\
                               .limit(limit)
                 
