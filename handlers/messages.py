@@ -46,19 +46,40 @@ class MessageHandler:
     def set_link_handler(self, link_handler):
         """Установка обработчика ссылок (вызывается из main.py)"""
         self.link_handler = link_handler
-        logger.info("LinkHandler интегрирован в MessageHandler")
+        logger.info("✅ LinkHandler успешно интегрирован в MessageHandler")
+        
+        # Проверяем что LinkHandler корректно настроен
+        if hasattr(link_handler, 'handle_link_message'):
+            logger.info("✅ Метод handle_link_message найден в LinkHandler")
+        else:
+            logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: Метод handle_link_message отсутствует в LinkHandler!")
+
+    def is_link_handler_ready(self) -> bool:
+        """Проверка готовности LinkHandler"""
+        return self.link_handler is not None and hasattr(self.link_handler, 'handle_link_message')
+
+    def get_integration_status(self) -> dict:
+        """Получение статуса интеграции для диагностики"""
+        return {
+            'link_handler_set': self.link_handler is not None,
+            'link_handler_ready': self.is_link_handler_ready(),
+            'url_pattern_ready': self.url_pattern is not None,
+            'status': 'ready' if self.is_link_handler_ready() else 'not_ready'
+        }
     
     def register_handlers(self):
         """Регистрация обработчиков сообщений"""
         
-        # Обработчик всех текстовых сообщений (кроме команд)
-        @self.bot.message_handler(content_types=['text'])
+        # Обработчик всех текстовых сообщений (кроме команд)  
+        @self.bot.message_handler(content_types=['text'], func=lambda message: not message.text.startswith('/'))
         def handle_text_message(message: Message):
-            """Обработка текстовых сообщений"""
+            """Обработка текстовых сообщений (исключая команды)"""
             try:
                 self._process_text_message(message)
             except Exception as e:
                 logger.error(f"❌ Критическая ошибка message handler: {e}")
+        
+        logger.info("✅ Message handlers зарегистрированы (исключая команды)")
         
         # ПЛАН 3: Обработчик файлов для форм (ЗАГЛУШКИ)
         # @self.bot.message_handler(content_types=['photo', 'document'])
@@ -191,7 +212,12 @@ class MessageHandler:
                 # Делегируем обработку ссылок в LinkHandler
                 self.link_handler.handle_link_message(message)
             else:
-                logger.warning("LinkHandler не инициализирован!")
+                logger.error("❌ КРИТИЧЕСКАЯ ОШИБКА: LinkHandler не инициализирован!")
+                # Временный fallback - логируем что ссылка была обнаружена
+                user_id = message.from_user.id
+                text = message.text or ""
+                urls = self.url_pattern.findall(text)
+                logger.warning(f"⚠️ Обнаружено {len(urls)} ссылок от пользователя {user_id}, но напоминание НЕ отправлено!")
                 
         except Exception as e:
             logger.error(f"❌ Ошибка _handle_message_with_links: {e}")

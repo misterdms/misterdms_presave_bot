@@ -237,6 +237,19 @@ class MenuHandler:
                 ]
             },
             
+            'diagnostics': {
+                'title': '🔧 Диагностика',
+                'description': 'Проверка состояния системы',
+                'buttons': [
+                    ('💓 Тест Keep Alive', 'diag_keepalive'),
+                    ('🔍 Проверка системы', 'diag_system_check'),
+                    ('📊 Статус и статистика бота', 'diag_bot_status'),
+                    ('🔗 Проверка LinkHandler', 'diag_link_integration'),  # ← НОВАЯ КНОПКА
+                    ('🔙 Назад', 'menu_main'),
+                    ('🏠 Главное меню', 'menu_main')
+                ]
+            },
+            
             # ПЛАН 3: Меню ИИ (ЗАГЛУШКА)
             # 'ai': {
             #     'title': '🤖 ИИ и автоматизация',
@@ -253,7 +266,7 @@ class MenuHandler:
             
             'help': {
                 'title': '❓ Помощь и команды',
-                'description': 'Список всех доступных команд',
+                'description': 'Выберите подраздел',
                 'buttons': [
                     ('📋 Список команд', 'help_commands'),
                     ('📖 Руководство пользователя', 'help_user_guide'),
@@ -922,6 +935,8 @@ class MenuHandler:
             self._system_check(callback_query)
         elif data == 'diag_bot_status':
             self._show_bot_status(callback_query)
+        elif data == 'diag_link_integration':
+            self._check_link_integration(callback_query)
         else:
             self.bot.answer_callback_query(
                 callback_query.id,
