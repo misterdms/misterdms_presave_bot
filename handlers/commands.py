@@ -727,12 +727,12 @@ class CommandHandler:
                         parse_mode='HTML'
                     )
                         
-            except Exception as e:
-                logger.error(f"❌ Ошибка cmd_menu: {e}")
-                self.bot.send_message(
-                    message.chat.id,
-                    "❌ Ошибка открытия меню. Попробуйте /resetmenu"
-                )
+        except Exception as e:
+            logger.error(f"❌ Ошибка cmd_menu: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Ошибка открытия меню. Попробуйте /resetmenu"
+            )
         
     @admin_required
     def cmd_resetmenu(self, message: Message):
