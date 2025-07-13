@@ -15,7 +15,7 @@ import telebot
 from telebot.types import Message
 
 from database.manager import DatabaseManager
-from utils.security import SecurityManager, admin_required, extract_command_args
+from utils.security import SecurityManager, admin_required, whitelist_required, extract_command_args
 from utils.logger import get_logger, log_user_action, log_admin_action
 from utils.helpers import format_user_mention
 

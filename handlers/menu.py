@@ -13,7 +13,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
 
 from database.manager import DatabaseManager
-from utils.security import SecurityManager, admin_required
+from utils.security import SecurityManager, admin_required, whitelist_required
 from utils.logger import get_logger, log_user_action
 from utils.helpers import format_user_mention
 from datetime import datetime
