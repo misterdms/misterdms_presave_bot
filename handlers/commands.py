@@ -479,71 +479,45 @@ class CommandHandler:
             )
 
     def _show_recent_links(self, message: Message, count: int):
-        """Общая функция показа последних ссылок"""
-        # Определяем thread_id СРАЗУ, до try блока
+        """Показ последних ссылок (ИСПРАВЛЕНО: используем безопасные методы и красивое форматирование)"""
         thread_id = getattr(message, 'message_thread_id', None)
         
         try:
             user_id = message.from_user.id
             log_user_action(logger, user_id, f"запросил последние {count} ссылок")
             
-            # Получаем ссылки
-            links = self.db.get_recent_links(count)
+            # ✅ ИСПРАВЛЕНИЕ: Используем безопасный метод
+            links = self.db.get_recent_links_safe(count)
             
-            if not links:
-                self.bot.send_message(
-                    message.chat.id,
-                    f"📎 <b>Последние {count} ссылок</b>\n\n🤷 Ссылок пока нет в базе данных.",
-                    parse_mode='HTML',
-                    message_thread_id=thread_id
-                )
-                return
+            # ✅ ИСПРАВЛЕНИЕ: Используем красивое форматирование
+            formatted_text = self.db.format_links_for_display(
+                links, 
+                f"Последние {count} ссылок"
+            )
             
-            # Формируем сообщение
-            text_parts = [f"📎 <b>Последние {count} ссылок</b>\n"]
+            # Отправляем результат
+            self.bot.send_message(
+                message.chat.id,
+                formatted_text,
+                parse_mode='HTML',
+                message_thread_id=thread_id
+            )
             
-            for i, link in enumerate(links, 1):
-                user = self.db.get_user_by_id(link.user_id)
-                username = f"@{user.username}" if user and user.username else f"ID{link.user_id}"
-                date_str = link.created_at.strftime("%d.%m %H:%M")
-                
-                # Обрезаем URL если очень длинный
-                display_url = link.url if len(link.url) <= 60 else link.url[:57] + "..."
-                
-                text_parts.append(f"{i}. <b>{username}</b> ({date_str})")
-                text_parts.append(f"   🔗 {display_url}")
-                
-                if i < len(links):
-                    text_parts.append("")
-            
-            # Разбиваем на части если сообщение слишком длинное
-            full_text = "\n".join(text_parts)
-            
-            if len(full_text) <= 4000:
-                self.bot.send_message(
-                    message.chat.id,
-                    full_text,
-                    parse_mode='HTML',
-                    message_thread_id=thread_id
-                )
-            else:
-                # Отправляем по частям
-                chunk_size = 3500
-                for i in range(0, len(full_text), chunk_size):
-                    chunk = full_text[i:i + chunk_size]
-                    self.bot.send_message(
-                        message.chat.id,
-                        chunk,
-                        parse_mode='HTML',
-                        message_thread_id=thread_id
-                    )
+            logger.info(f"✅ Показано последние {count} ссылок ({len(links)} найдено)")
             
         except Exception as e:
             logger.error(f"❌ Ошибка _show_recent_links: {e}")
+            
+            # Отправляем сообщение об ошибке
+            error_text = f"❌ <b>Ошибка получения ссылок</b>\n\n" \
+                        f"Не удалось загрузить последние {count} ссылок.\n" \
+                        f"Попробуйте позже или обратитесь к администратору."
+            
             self.bot.send_message(
                 message.chat.id,
-                f"❌ Ошибка при получении последних {count} ссылок",
-                message_thread_id=getattr(message, 'message_thread_id', None)
+                error_text,
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
     
     # ============================================
@@ -732,7 +706,7 @@ class CommandHandler:
     # @admin_required # Если хочется ограничить юзеров
     @whitelist_required
     def cmd_linksby(self, message: Message):
-        """Команда /linksby @username - ссылки пользователя"""
+        """Команда /linksby @username - ссылки пользователя (ИСПРАВЛЕНО: безопасные методы)"""
         # Определяем thread_id СРАЗУ, до try блока
         thread_id = getattr(message, 'message_thread_id', None)
         
@@ -755,8 +729,8 @@ class CommandHandler:
             
             username = args[0].lstrip('@')
             
-            # Получаем ссылки пользователя
-            links = self.db.get_links_by_username(username)
+            # ✅ ИСПРАВЛЕНИЕ: Используем безопасный метод
+            links = self.db.get_links_by_username_safe(username, limit=20)
             
             if not links:
                 self.bot.send_message(
@@ -768,30 +742,21 @@ class CommandHandler:
                 )
                 return
             
-            # Формируем отчет
-            text_parts = [
-                f"🔍 <b>Ссылки пользователя @{username}</b>",
-                f"📊 <b>Всего найдено:</b> {len(links)} ссылок\n"
-            ]
+            # ✅ ИСПРАВЛЕНИЕ: Используем красивое форматирование
+            formatted_text = self.db.format_links_for_display(
+                links, 
+                f"Ссылки пользователя @{username}"
+            )
             
-            for i, link in enumerate(links[:20], 1):  # Показываем максимум 20
-                date_str = link.created_at.strftime("%d.%m.%Y %H:%M")
-                display_url = link.url if len(link.url) <= 50 else link.url[:47] + "..."
-                
-                text_parts.append(f"{i}. {date_str}")
-                text_parts.append(f"   🔗 {display_url}")
-                
-                if i < min(len(links), 20):
-                    text_parts.append("")
-            
-            if len(links) > 20:
-                text_parts.append(f"\n... и еще {len(links) - 20} ссылок")
+            # Добавляем статистику в конец
+            if len(links) >= 20:
+                formatted_text += f"\n\n💡 Показано последние 20 ссылок. Всего может быть больше."
             
             log_admin_action(logger, user_id, f"запросил ссылки пользователя @{username}")
             
             self.bot.send_message(
                 message.chat.id,
-                "\n".join(text_parts),
+                formatted_text,
                 parse_mode='HTML',
                 message_thread_id=thread_id
             )
