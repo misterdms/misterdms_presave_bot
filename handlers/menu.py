@@ -387,7 +387,7 @@ class MenuHandler:
     # КОМАНДЫ МЕНЮ
     # ============================================
     
-    @admin_required
+    # @admin_required # Если меню хочется сделать только админским
     @whitelist_required
     def cmd_menu(self, message: Message):
         """Команда /menu - показ главного меню"""
@@ -398,6 +398,13 @@ class MenuHandler:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # Проверка разрешенного топика (если не ЛС)
+            if chat_type != 'private' and thread_id:
+                if not self.security.is_thread_allowed(thread_id):
+                    logger.info(f"Команда /resetmenu в неразрешенном топике {thread_id} проигнорирована")
+                    return
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG menu.py cmd_menu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -427,7 +434,7 @@ class MenuHandler:
                 message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
-    @admin_required
+    # @admin_required # Если хочется ограничить юзеров
     @whitelist_required
     def cmd_resetmenu(self, message: Message):
         """Команда /resetmenu - сброс меню"""
@@ -438,6 +445,13 @@ class MenuHandler:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # Проверка разрешенного топика (если не ЛС)
+            if chat_type != 'private' and thread_id:
+                if not self.security.is_thread_allowed(thread_id):
+                    logger.info(f"Команда /resetmenu в неразрешенном топике {thread_id} проигнорирована")
+                    return
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG menu.py cmd_resetmenu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -488,11 +502,19 @@ class MenuHandler:
             user_id = callback_query.from_user.id
             data = callback_query.data
             
-            # Проверка прав админа
-            if not self.security.validate_admin_callback(callback_query):
+            # Список функций, доступных всем пользователям
+            public_callbacks = [
+                'about_v25', 'about_quick', 'about_telegram_app', 
+                'help_commands', 'help_user_guide', 'help_admin_guide',
+                'mystats_my_links', 'mystats_daily_activity', 'mystats_my_ranking',
+                'menu_main', 'menu_help', 'menu_mystats'
+            ]
+            
+            # Проверка прав: админские функции только для админов
+            if data not in public_callbacks and not self.security.validate_admin_callback(callback_query):
                 self.bot.answer_callback_query(
                     callback_query.id,
-                    "❌ Доступ запрещен! Только для администраторов.",
+                    "❌ Эта функция доступна только администраторам.",
                     show_alert=True
                 )
                 return
@@ -534,11 +556,15 @@ class MenuHandler:
             # Обработка статистики пользователя
             elif data.startswith('mystats_'):
                 self._handle_mystats_action(callback_query)
-            
+
+            # Обработка информации о боте
+            elif data.startswith('about_'):
+                self._handle_about_action(callback_query)
+
             # ПЛАН 3: Обработка ИИ (ЗАГЛУШКИ)
             # elif data.startswith('ai_'):
             #     self._handle_ai_action(callback_query)
-            
+
             else:
                 self.bot.answer_callback_query(
                     callback_query.id,
@@ -981,7 +1007,17 @@ class MenuHandler:
             self._show_user_guide(callback_query)
         elif data == 'help_admin_guide':
             self._show_admin_guide(callback_query)
-        elif data == 'about_v25':
+        else:
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❓ Неизвестный раздел помощи"
+            )
+
+    def _handle_about_action(self, callback_query):
+        """Обработка действий информации о боте"""
+        data = callback_query.data
+        
+        if data == 'about_v25':
             self._show_about_v25(callback_query)
         elif data == 'about_quick':
             self._show_about_quick(callback_query)
@@ -990,7 +1026,7 @@ class MenuHandler:
         else:
             self.bot.answer_callback_query(
                 callback_query.id,
-                "❓ Неизвестный раздел помощи"
+                "❓ Неизвестный раздел информации"
             )
 
     def _handle_mystats_action(self, callback_query):

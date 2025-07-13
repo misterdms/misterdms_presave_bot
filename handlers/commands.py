@@ -179,7 +179,7 @@ class CommandHandler:
     # ПЛАН 1: БАЗОВЫЕ КОМАНДЫ (АКТИВНЫЕ)
     # ============================================
     
-    @admin_required
+    # @admin_required # Если хочется ограничить юзеров
     @whitelist_required
     def cmd_start(self, message: Message):
         """Команда /start - приветствие"""
@@ -687,7 +687,7 @@ class CommandHandler:
                 message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
-    @admin_required
+    # @admin_required # Если хочется ограничить юзеров
     @whitelist_required
     def cmd_currentmode(self, message: Message):
         """Команда /currentmode - показ текущего режима"""
@@ -729,7 +729,7 @@ class CommandHandler:
     # КОМАНДЫ АНАЛИТИКИ (ТОЛЬКО АДМИНЫ)
     # ============================================
     
-    @admin_required
+    # @admin_required # Если хочется ограничить юзеров
     @whitelist_required
     def cmd_linksby(self, message: Message):
         """Команда /linksby @username - ссылки пользователя"""
@@ -804,7 +804,7 @@ class CommandHandler:
                 message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
-    @admin_required
+    # @admin_required # Если хочется ограничить юзеров
     @whitelist_required
     def cmd_menu(self, message: Message):
         """Команда /menu - главное меню администратора"""
@@ -815,6 +815,13 @@ class CommandHandler:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # Проверка разрешенного топика (если не ЛС)
+            if chat_type != 'private' and thread_id:
+                if not self.security.is_thread_allowed(thread_id):
+                    logger.info(f"Команда /menu в неразрешенном топике {thread_id} проигнорирована")
+                    return
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG cmd_menu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -845,7 +852,7 @@ class CommandHandler:
                 message_thread_id=getattr(message, 'message_thread_id', None)
             )
         
-    @admin_required
+    # @admin_required # Если хочется ограничить юзеров
     @whitelist_required
     def cmd_resetmenu(self, message: Message):
         """Команда /resetmenu - сброс меню"""
@@ -856,6 +863,13 @@ class CommandHandler:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
+            thread_id = getattr(message, 'message_thread_id', None)
+            
+            # Проверка разрешенного топика (если не ЛС)
+            if chat_type != 'private' and thread_id:
+                if not self.security.is_thread_allowed(thread_id):
+                    logger.info(f"Команда /resetmenu в неразрешенном топике {thread_id} проигнорирована")
+                    return
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG cmd_resetmenu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -979,7 +993,7 @@ class CommandHandler:
     # ПЛАН 3: КОМАНДЫ ИИ И ФОРМ (ЗАГЛУШКИ)
     # ============================================
     
-    # @admin_required  
+    # # @admin_required # Если хочется ограничить юзеров
     # def cmd_askpresave(self, message: Message):
     #     """Команда /askpresave - интерактивная форма пресейва"""
     #     # Определяем thread_id СРАЗУ, до try блока
