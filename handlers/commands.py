@@ -71,6 +71,11 @@ class CommandHandler:
             self.cmd_resetmenu,
             commands=['resetmenu']
         )
+        
+        self.bot.register_message_handler(
+            self.cmd_about25,
+            commands=['about25']
+        )
 
         # Команды управления ботом (только админы)
         self.bot.register_message_handler(
@@ -434,7 +439,45 @@ class CommandHandler:
     def cmd_last30links(self, message: Message):
         """Команда /last30links - последние 30 ссылок"""
         self._show_recent_links(message, 30)
-    
+
+    def cmd_about25(self, message: Message):
+        """Команда /about25 - информация о боте v25.1 (перенаправление в меню)"""
+        thread_id = getattr(message, 'message_thread_id', None)
+        
+        try:
+            user_id = message.from_user.id
+            log_user_action(logger, user_id, "запросил информацию о боте v25.1 через команду")
+            
+            # Получаем MenuHandler из main.py через ссылку
+            menu_handler = getattr(self.bot, '_menu_handler', None)
+            if menu_handler:
+                # Создаем фейковый callback_query для совместимости
+                fake_callback = type('FakeCallback', (), {
+                    'from_user': message.from_user,
+                    'message': message,
+                    'id': f"cmd_about25_{user_id}",
+                    'data': 'about_v25'
+                })()
+                
+                menu_handler._show_about_v25(fake_callback)
+            else:
+                # Fallback - простое сообщение
+                self.bot.send_message(
+                    message.chat.id,
+                    "🔥 <b>Do Presave Reminder Bot v25.1</b>\n\n"
+                    "📱 Используйте /menu для доступа к интерактивному гайду!",
+                    parse_mode='HTML',
+                    message_thread_id=thread_id
+                )
+                
+        except Exception as e:
+            logger.error(f"❌ Ошибка cmd_about25: {e}")
+            self.bot.send_message(
+                message.chat.id,
+                "❌ Ошибка при получении информации о боте. Используйте /menu",
+                message_thread_id=getattr(message, 'message_thread_id', None)
+            )
+
     def _show_recent_links(self, message: Message, count: int):
         """Общая функция показа последних ссылок"""
         # Определяем thread_id СРАЗУ, до try блока

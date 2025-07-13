@@ -8,10 +8,10 @@
 ПЛАН 4: Расширение для backup (ЗАГЛУШКИ)
 """
 
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton, Message
-
+import os
 from database.manager import DatabaseManager
 from utils.security import SecurityManager, admin_required, whitelist_required
 from utils.logger import get_logger, log_user_action
@@ -19,6 +19,41 @@ from utils.helpers import format_user_mention
 from datetime import datetime
 
 logger = get_logger(__name__)
+
+def create_webapp_keyboard(webapp_url: str, additional_buttons: List[Tuple[str, str]] = None) -> telebot.types.InlineKeyboardMarkup:
+    """Единый метод создания WebApp клавиатуры"""
+    try:
+        markup = telebot.types.InlineKeyboardMarkup()
+        
+        # Web App кнопка (основная)
+        webapp_button = telebot.types.InlineKeyboardButton(
+            "🌐 Интерактивный гайд",
+            web_app=telebot.types.WebAppInfo(webapp_url)
+        )
+        markup.add(webapp_button)
+        
+        # Дополнительные кнопки если переданы
+        if additional_buttons:
+            for button_text, callback_data in additional_buttons:
+                markup.add(telebot.types.InlineKeyboardButton(button_text, callback_data=callback_data))
+        
+        # Навигация по умолчанию
+        markup.add(
+            telebot.types.InlineKeyboardButton("🔙 Назад", callback_data="menu_main"),
+            telebot.types.InlineKeyboardButton("🏠 Главное меню", callback_data="menu_main")
+        )
+        
+        return markup
+        
+    except Exception as e:
+        logger.error(f"❌ Ошибка create_webapp_keyboard: {e}")
+        # Fallback клавиатура без WebApp
+        markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(
+            telebot.types.InlineKeyboardButton("🔙 Назад", callback_data="menu_main"),
+            telebot.types.InlineKeyboardButton("🏠 Главное меню", callback_data="menu_main")
+        )
+        return markup
 
 class MenuHandler:
     """ЦЕНТРАЛЬНЫЙ обработчик всего функционала меню"""
@@ -48,6 +83,7 @@ class MenuHandler:
                     ('🔧 Диагностика', 'menu_diagnostics'),
                     # ПЛАН 3: Кнопка ИИ (ЗАГЛУШКА)
                     # ('🤖 ИИ и автоматизация', 'menu_ai'),
+                    ('📖 О боте v25.1', 'about_v25'),
                     ('❓ Помощь', 'menu_help')
                 ]
             },
@@ -318,6 +354,34 @@ class MenuHandler:
         }
         
         return mode_mapping.get(callback_data) == current_mode
+
+    def create_navigation_keyboard(self, back_data: str = "menu_main", home_data: str = "menu_main") -> telebot.types.InlineKeyboardMarkup:
+        """Создание навигационной клавиатуры"""
+        keyboard = telebot.types.InlineKeyboardMarkup(row_width=2)
+        keyboard.add(
+            telebot.types.InlineKeyboardButton("🔙 Назад", callback_data=back_data),
+            telebot.types.InlineKeyboardButton("🏠 Главное меню", callback_data=home_data)
+        )
+        return keyboard
+
+    def _create_fallback_about_message(self) -> str:
+        """Создание fallback сообщения без WebApp"""
+        return """🔥 <b>Do Presave Reminder Bot v25.1</b>
+
+🎵 <b>Твой личный помощник для музыкального хайпа!</b>
+
+✨ <b>Что умеет бот:</b>
+- Автоматические напоминания о пресейвах
+- Статистика и рейтинги участников
+- Интерактивное меню с кнопками
+- Система кармы (скоро в ПЛАНЕ 2)
+
+🎯 <b>Основные команды:</b>
+/menu - главное меню
+/mystat - твоя статистика
+/help - список всех команд
+
+💡 <i>WebApp недоступен. Используйте обычные команды.</i>"""
 
     # ============================================
     # КОМАНДЫ МЕНЮ
@@ -917,6 +981,12 @@ class MenuHandler:
             self._show_user_guide(callback_query)
         elif data == 'help_admin_guide':
             self._show_admin_guide(callback_query)
+        elif data == 'about_v25':
+            self._show_about_v25(callback_query)
+        elif data == 'about_quick':
+            self._show_about_quick(callback_query)
+        elif data == 'about_telegram_app':
+            self._open_telegram_web_app(callback_query)
         else:
             self.bot.answer_callback_query(
                 callback_query.id,
@@ -1181,6 +1251,205 @@ class MenuHandler:
         )
         
         self.bot.answer_callback_query(callback_query.id)
+
+    def _show_about_v25(self, callback_query):
+        """Показ меню информации о боте v25.1"""
+        try:
+            # Получаем URL из переменной окружения с валидацией
+            webapp_url = os.getenv('WEBAPP_URL')
+            if not webapp_url:
+                logger.warning("⚠️ WEBAPP_URL не найден в переменных окружения")
+                webapp_url = 'https://misterdms.github.io/misterdms_presave_bot/about25/'
+                
+            # Валидация URL
+            if not webapp_url.startswith(('http://', 'https://')):
+                logger.error(f"❌ Некорректный WEBAPP_URL: {webapp_url}")
+                webapp_url = 'https://misterdms.github.io/misterdms_presave_bot/about25/'
+            
+            # Создаем клавиатуру через единый метод
+            additional_buttons = [
+                ("📋 Краткая справка", "about_quick"),
+                ("🔗 Telegram App", "about_telegram_app")
+            ]
+            markup = create_webapp_keyboard(webapp_url, additional_buttons)
+            
+            text = f"""🔥 <b>Do Presave Reminder Bot v25.1</b>
+
+    🎵 <b>Твой личный помощник для музыкального хайпа!</b>
+
+    📖 <b>Что внутри интерактивного гайда:</b>
+
+    ✨ <b>Уже работает:</b>
+       • Умное меню с кнопками
+       • Автоматические напоминания
+       • Базовая статистика
+       • Настройки для админов
+
+    🔮 <b>Скоро будет:</b>
+       • Система кармы и званий
+       • Интерактивные формы
+       • ИИ-помощник
+       • Система backup
+
+    🌐 <b>Нажми "Интерактивный гайд"</b> для просмотра красивой HTML-страницы с анимированными градиентами!
+
+    💡 <i>Адаптивный дизайн оптимизирован для всех устройств</i>"""
+
+            self.bot.edit_message_text(
+                text,
+                callback_query.message.chat.id,
+                callback_query.message.message_id,
+                reply_markup=markup,
+                parse_mode='HTML'
+            )
+            
+            self.bot.answer_callback_query(callback_query.id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка _show_about_v25: {e}")
+            
+            # Fallback без WebApp
+            fallback_text = self._create_fallback_about_message()
+            fallback_markup = self.create_navigation_keyboard("menu_main", "menu_main")
+            
+            try:
+                self.bot.edit_message_text(
+                    fallback_text,
+                    callback_query.message.chat.id,
+                    callback_query.message.message_id,
+                    reply_markup=fallback_markup,
+                    parse_mode='HTML'
+                )
+                self.bot.answer_callback_query(callback_query.id, "⚠️ Загружена упрощенная версия")
+            except:
+                self.bot.answer_callback_query(
+                    callback_query.id,
+                    "❌ Ошибка загрузки информации о боте",
+                    show_alert=True
+                )
+
+    def _show_about_quick(self, callback_query):
+        """Показ краткой справки о боте"""
+        try:
+            text = """📋 <b>Краткая справка v25.1</b>
+
+    🎯 <b>Главная цель:</b> 
+    Автоматизация взаимных пресейвов в музыкальном сообществе
+
+    ⚡ <b>Работает сейчас:</b>
+    - <code>/menu</code> - главное меню с кнопками
+    - Автонапоминания при публикации ссылок
+    - <code>/mystat</code> - личная статистика
+    - <code>/last10links</code>, <code>/last30links</code> - свежие просьбы
+
+    🔮 <b>В разработке (Планы 2-4):</b>
+    - Карма и звания за взаимопомощь
+    - Интерактивные формы подачи заявок
+    - ИИ-помощник для ответов на вопросы
+    - Автоматический backup данных
+
+    💬 <b>Где работает:</b>
+    - ЛС с ботом (админы - все команды)
+    - Супергруппа, топики #2 и #3
+
+    👑 <b>Разработчик:</b> @Mister_DMS
+
+    🔥 <b>Новое в v25.1:</b>
+    - Анимированные градиенты
+    - Улучшенная адаптивность
+    - Web App интеграция"""
+
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(
+                telebot.types.InlineKeyboardButton("🌐 Полный гайд", callback_data="about_v25"),
+                telebot.types.InlineKeyboardButton("🔙 Назад", callback_data="about_v25")
+            )
+
+            self.bot.edit_message_text(
+                text,
+                callback_query.message.chat.id,
+                callback_query.message.message_id,
+                reply_markup=markup,
+                parse_mode='HTML'
+            )
+            
+            self.bot.answer_callback_query(callback_query.id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка _show_about_quick: {e}")
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❌ Ошибка отображения краткой справки"
+            )
+
+    def _open_telegram_web_app(self, callback_query):
+        """Открытие Web App через ссылку в Telegram"""
+        try:
+            # Получаем short_name из переменной окружения с валидацией
+            webapp_short_name = os.getenv('WEBAPP_SHORT_NAME')
+            if not webapp_short_name:
+                logger.warning("⚠️ WEBAPP_SHORT_NAME не найден в переменных окружения")
+                self.bot.answer_callback_query(
+                    callback_query.id,
+                    "❌ Telegram Web App не настроен. Обратитесь к администратору.",
+                    show_alert=True
+                )
+                return
+
+            try:
+                bot_username = self.bot.get_me().username
+                if not bot_username:
+                    raise Exception("Не удалось получить username бота")
+            except Exception as e:
+                logger.error(f"❌ Ошибка получения username бота: {e}")
+                self.bot.answer_callback_query(
+                    callback_query.id,
+                    "❌ Ошибка настройки Telegram App",
+                    show_alert=True
+                )
+                return
+            
+            # Формируем ссылку на Telegram Web App
+            telegram_app_url = f"https://t.me/{bot_username}/{webapp_short_name}"
+            
+            markup = telebot.types.InlineKeyboardMarkup()
+            markup.add(
+                telebot.types.InlineKeyboardButton("🚀 Открыть в Telegram", url=telegram_app_url)
+            )
+            markup.add(
+                telebot.types.InlineKeyboardButton("🔙 Назад", callback_data="about_v25")
+            )
+            
+            text = f"""📱 <b>Telegram Web App</b>
+
+    🚀 <b>Откройте гайд как нативное приложение!</b>
+
+    Ссылка: <code>{telegram_app_url}</code>
+
+    💡 <b>Преимущества Telegram App:</b>
+    - Полноэкранный режим
+    - Нативная интеграция
+    - Быстрая загрузка
+    - Тактильная обратная связь
+
+    ⚡ Нажмите кнопку ниже для открытия!"""
+
+            self.bot.edit_message_text(
+                text,
+                callback_query.message.chat.id,
+                callback_query.message.message_id,
+                reply_markup=markup,
+                parse_mode='HTML'
+            )
+            
+            self.bot.answer_callback_query(callback_query.id)
+            
+        except Exception as e:
+            logger.error(f"❌ Ошибка _open_telegram_web_app: {e}")
+            self.bot.answer_callback_query(
+                callback_query.id,
+                "❌ Ошибка получения ссылки на Web App"
+            )
 
     def _show_my_links(self, callback_query):
         """Показ ссылок текущего пользователя"""

@@ -11,6 +11,7 @@
 from typing import Dict, Callable, Any
 import telebot
 from telebot.types import CallbackQuery
+import os
 
 from database.manager import DatabaseManager
 from utils.security import SecurityManager
@@ -97,8 +98,16 @@ class CallbackHandler:
         help_callbacks = [
             'help_commands', 'help_user_guide', 'help_admin_guide'
         ]
-        
+
         for callback in help_callbacks:
+            self.callback_handlers[callback] = self.menu_handler.handle_menu_callback
+
+        # О боте - делегируем в MenuHandler
+        about_callbacks = [
+            'about_v25', 'about_quick', 'about_telegram_app'
+        ]
+
+        for callback in about_callbacks:
             self.callback_handlers[callback] = self.menu_handler.handle_menu_callback
             
         # Статистика пользователя - делегируем в MenuHandler
@@ -221,6 +230,7 @@ class CallbackHandler:
             'diag_': self.menu_handler.handle_menu_callback,
             'help_': self.menu_handler.handle_menu_callback,
             'mystats_': self.menu_handler.handle_menu_callback,
+            'about_': self.menu_handler.handle_menu_callback,
             'dev_': self._handle_dev_callback,
             
             # ПЛАН 2: Префиксы кармы (ЗАГЛУШКИ)
@@ -486,7 +496,7 @@ class CallbackHandler:
     #             callback_query.id,
     #             "❌ Ошибка создания backup"
     #         )
-    
+
     # ============================================
     # УТИЛИТЫ ДЛЯ CALLBACK'ОВ
     # ============================================
