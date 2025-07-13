@@ -178,6 +178,9 @@ class CommandHandler:
     @whitelist_required
     def cmd_start(self, message: Message):
         """Команда /start - приветствие"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             username = message.from_user.username
@@ -248,6 +251,9 @@ class CommandHandler:
     
     def cmd_help(self, message: Message):
         """Команда /help - список команд с описанием"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             log_user_action(logger, user_id, "запросил помощь /help")
@@ -329,6 +335,9 @@ class CommandHandler:
     
     def cmd_mystat(self, message: Message):
         """Команда /mystat - статистика пользователя"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             log_user_action(logger, user_id, "запросил статистику /mystat")
@@ -424,6 +433,9 @@ class CommandHandler:
     
     def _show_recent_links(self, message: Message, count: int):
         """Общая функция показа последних ссылок"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             log_user_action(logger, user_id, f"запросил последние {count} ссылок")
@@ -494,6 +506,9 @@ class CommandHandler:
     @admin_required
     def cmd_enablebot(self, message: Message):
         """Команда /enablebot - активация бота"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             
@@ -520,6 +535,9 @@ class CommandHandler:
     @admin_required
     def cmd_disablebot(self, message: Message):
         """Команда /disablebot - деактивация бота"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             
@@ -573,6 +591,9 @@ class CommandHandler:
     
     def _set_limit_mode(self, message: Message, mode: str):
         """Общая функция установки режима лимитов"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             
@@ -623,6 +644,9 @@ class CommandHandler:
     @whitelist_required
     def cmd_currentmode(self, message: Message):
         """Команда /currentmode - показ текущего режима"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             current_mode = self.db.get_setting('current_limit_mode', 'BURST')
             
@@ -662,6 +686,9 @@ class CommandHandler:
     @whitelist_required
     def cmd_linksby(self, message: Message):
         """Команда /linksby @username - ссылки пользователя"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             args = extract_command_args(message)
@@ -734,11 +761,13 @@ class CommandHandler:
     @whitelist_required
     def cmd_menu(self, message: Message):
         """Команда /menu - главное меню администратора"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
-            thread_id = getattr(message, 'message_thread_id', None)
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG cmd_menu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -773,11 +802,13 @@ class CommandHandler:
     @whitelist_required
     def cmd_resetmenu(self, message: Message):
         """Команда /resetmenu - сброс меню"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
-            thread_id = getattr(message, 'message_thread_id', None)
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG cmd_resetmenu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -815,6 +846,9 @@ class CommandHandler:
     # @admin_required
     # def cmd_karma(self, message: Message):
     #     """Команда /karma @username +/-число"""
+    #     # Определяем thread_id СРАЗУ, до try блока
+    #     thread_id = getattr(message, 'message_thread_id', None)
+    #     
     #     try:
     #         user_id = message.from_user.id
     #         args = extract_command_args(message)
@@ -901,6 +935,9 @@ class CommandHandler:
     # @admin_required  
     # def cmd_askpresave(self, message: Message):
     #     """Команда /askpresave - интерактивная форма пресейва"""
+    #     # Определяем thread_id СРАЗУ, до try блока
+    #     thread_id = getattr(message, 'message_thread_id', None)
+    #     
     #     try:
     #         # Запуск интерактивной формы для пресейва
     #         from services.forms import FormManager
@@ -922,6 +959,9 @@ class CommandHandler:
     # @admin_required
     # def cmd_downloadsql(self, message: Message):
     #     """Команда /downloadsql - создание backup БД"""
+    #     # Определяем thread_id СРАЗУ, до try блока
+    #     thread_id = getattr(message, 'message_thread_id', None)
+    #     
     #     try:
     #         # Проверяем что это личка
     #         if message.chat.type != 'private':

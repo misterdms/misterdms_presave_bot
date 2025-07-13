@@ -293,11 +293,13 @@ class MenuHandler:
     @whitelist_required
     def cmd_menu(self, message: Message):
         """Команда /menu - показ главного меню"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
-            thread_id = getattr(message, 'message_thread_id', None)
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG menu.py cmd_menu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -315,24 +317,29 @@ class MenuHandler:
                 chat_id,  # ← Явно используем chat_id
                 text,
                 reply_markup=keyboard,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
                 
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_menu: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Ошибка открытия меню. Попробуйте /resetmenu"
+                "❌ Ошибка открытия меню. Попробуйте /resetmenu",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     @admin_required
+    @whitelist_required
     def cmd_resetmenu(self, message: Message):
         """Команда /resetmenu - сброс меню"""
+        # Определяем thread_id СРАЗУ, до try блока
+        thread_id = getattr(message, 'message_thread_id', None)
+        
         try:
             user_id = message.from_user.id
             chat_id = message.chat.id
             chat_type = message.chat.type
-            thread_id = getattr(message, 'message_thread_id', None)
             
             # ОТЛАДОЧНОЕ ЛОГИРОВАНИЕ
             logger.info(f"🔍 DEBUG menu.py cmd_resetmenu: user={user_id}, chat={chat_id}, type={chat_type}, thread={thread_id}")
@@ -346,7 +353,8 @@ class MenuHandler:
             self.bot.send_message(
                 chat_id,  # ← Явно используем chat_id
                 "🔄 <b>Меню сброшено!</b>\n\nВосстановление функционала...",
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
             # Показываем новое меню
@@ -360,14 +368,16 @@ class MenuHandler:
                 chat_id,  # ← Явно используем chat_id
                 text,
                 reply_markup=keyboard,
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
             
         except Exception as e:
             logger.error(f"❌ Ошибка cmd_resetmenu: {e}")
             self.bot.send_message(
                 message.chat.id,
-                "❌ Критическая ошибка меню. Обратитесь к разработчику."
+                "❌ Критическая ошибка меню. Обратитесь к разработчику.",
+                message_thread_id=getattr(message, 'message_thread_id', None)
             )
     
     # ============================================
@@ -700,13 +710,17 @@ class MenuHandler:
         data = callback_query.data
         
         if data == 'analytics_links_by_user':
+            # Определяем thread_id для callback_query
+            thread_id = getattr(callback_query.message, 'message_thread_id', None)
+            
             # Запрашиваем username у пользователя
             self.bot.answer_callback_query(callback_query.id)
             self.bot.send_message(
                 callback_query.message.chat.id,
                 "👤 <b>Поиск ссылок по пользователю</b>\n\n"
                 "Отправьте username пользователя в формате: @username",
-                parse_mode='HTML'
+                parse_mode='HTML',
+                message_thread_id=thread_id
             )
         # ПЛАН 2: Дополнительная аналитика (ЗАГЛУШКИ)
         # elif data == 'analytics_karma_by_user':
