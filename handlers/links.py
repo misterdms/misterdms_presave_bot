@@ -67,6 +67,20 @@ class LinkHandler:
             
             # ДИАГНОСТИЧЕСКИЙ ЛОГ
             logger.info(f"🔗 ВЫЗВАН handle_link_message: user_id={user_id}, thread_id={thread_id}, text='{text[:100]}...'")
+            # 🔍 РАСШИРЕННАЯ ДИАГНОСТИКА ДЛЯ ПРОБЛЕМЫ №3
+            logger.info(f"🔍 КРИТИЧЕСКАЯ ДИАГНОСТИКА:")
+            logger.info(f"  📱 user_id: {user_id}")
+            logger.info(f"  📝 thread_id: {thread_id}")
+            logger.info(f"  📜 text: '{text}'")
+            logger.info(f"  🔗 contains URLs: {bool(self.url_pattern.search(text))}")
+            logger.info(f"  ⚙️ bot_enabled: {self.db.get_setting('bot_enabled', True)}")
+            
+            # Проверяем WHITELIST детально
+            whitelist_from_security = getattr(self.security, 'whitelist_threads', [])
+            whitelist_from_config = getattr(self.config, 'WHITELIST', [])
+            logger.info(f"  📋 WHITELIST (security): {whitelist_from_security}")
+            logger.info(f"  📋 WHITELIST (config): {whitelist_from_config}")
+            logger.info(f"  ✅ thread_id in whitelist: {thread_id in (whitelist_from_security or whitelist_from_config)}")
             
             # Проверяем включен ли бот
             if not self.db.get_setting('bot_enabled', True):
