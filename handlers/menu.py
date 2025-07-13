@@ -21,23 +21,65 @@ from datetime import datetime
 logger = get_logger(__name__)
 
 def create_webapp_keyboard(webapp_url: str, additional_buttons: List[Tuple[str, str]] = None) -> telebot.types.InlineKeyboardMarkup:
-    """Единый метод создания WebApp клавиатуры"""
+    """Умная WebApp клавиатура с множественными fallback для сохранения функциональности"""
     try:
         markup = telebot.types.InlineKeyboardMarkup()
         
-        # Web App кнопка (основная)
-        webapp_button = telebot.types.InlineKeyboardButton(
-            "🌐 Интерактивный гайд",
-            web_app=telebot.types.WebAppInfo(webapp_url)
-        )
-        markup.add(webapp_button)
+        # МЕТОД 1: Пробуем правильный синтаксис url=
+        try:
+            webapp_button = telebot.types.InlineKeyboardButton(
+                "🌐 Интерактивный гайд",
+                web_app=telebot.types.WebAppInfo(url=webapp_url)
+            )
+            markup.add(webapp_button)
+            logger.info("✅ WebApp кнопка создана (синтаксис url=)")
+        except Exception as method1_error:
+            logger.warning(f"⚠️ Метод 1 (url=) не сработал: {method1_error}")
+            
+            # МЕТОД 2: Пробуем старый синтаксис без url=
+            try:
+                webapp_button = telebot.types.InlineKeyboardButton(
+                    "🌐 Интерактивный гайд",
+                    web_app=telebot.types.WebAppInfo(webapp_url)
+                )
+                markup.add(webapp_button)
+                logger.info("✅ WebApp кнопка создана (старый синтаксис)")
+            except Exception as method2_error:
+                logger.warning(f"⚠️ Метод 2 (старый синтаксис) не сработал: {method2_error}")
+                
+                # МЕТОД 3: Создаем объект отдельно
+                try:
+                    webapp_info = telebot.types.WebAppInfo(url=webapp_url)
+                    webapp_button = telebot.types.InlineKeyboardButton(
+                        "🌐 Интерактивный гайд",
+                        web_app=webapp_info
+                    )
+                    markup.add(webapp_button)
+                    logger.info("✅ WebApp кнопка создана (отдельный объект)")
+                except Exception as method3_error:
+                    logger.warning(f"⚠️ Метод 3 (отдельный объект) не сработал: {method3_error}")
+                    
+                    # ПОСЛЕДНИЙ FALLBACK: URL кнопка (НЕ WebApp, но работает)
+                    try:
+                        webapp_button = telebot.types.InlineKeyboardButton(
+                            "🌐 Открыть гайд (в браузере)",
+                            url=webapp_url
+                        )
+                        markup.add(webapp_button)
+                        logger.warning("⚠️ WebApp не поддерживается, используем URL кнопку")
+                    except Exception as final_error:
+                        logger.error(f"❌ Критическая ошибка: {final_error}")
+                        # Создаем просто кнопку справки
+                        markup.add(
+                            telebot.types.InlineKeyboardButton("📋 Краткая справка", callback_data="about_quick")
+                        )
         
-        # Дополнительные кнопки если переданы
+        # Дополнительные кнопки
         if additional_buttons:
             for button_text, callback_data in additional_buttons:
                 markup.add(telebot.types.InlineKeyboardButton(button_text, callback_data=callback_data))
         
-        # Навигация по умолчанию
+        # Навигация
         markup.add(
             telebot.types.InlineKeyboardButton("🔙 Назад", callback_data="menu_main"),
             telebot.types.InlineKeyboardButton("🏠 Главное меню", callback_data="menu_main")
@@ -46,9 +88,12 @@ def create_webapp_keyboard(webapp_url: str, additional_buttons: List[Tuple[str, 
         return markup
         
     except Exception as e:
-        logger.error(f"❌ Ошибка create_webapp_keyboard: {e}")
-        # Fallback клавиатура без WebApp
+        logger.error(f"❌ Критическая ошибка create_webapp_keyboard: {e}")
+        # Аварийная клавиатура
         markup = telebot.types.InlineKeyboardMarkup()
+        markup.add(
+            telebot.types.InlineKeyboardButton("📋 Краткая справка", callback_data="about_quick")
+        )
         markup.add(
             telebot.types.InlineKeyboardButton("🔙 Назад", callback_data="menu_main"),
             telebot.types.InlineKeyboardButton("🏠 Главное меню", callback_data="menu_main")
@@ -381,7 +426,7 @@ class MenuHandler:
 /mystat - твоя статистика
 /help - список всех команд
 
-💡 <i>WebApp недоступен. Используйте обычные команды.</i>"""
+💡 <i>Если WebApp не открывается, используйте "Краткая справка" или обычные команды.</i>"""
 
     # ============================================
     # КОМАНДЫ МЕНЮ
@@ -1291,6 +1336,8 @@ class MenuHandler:
     def _show_about_v25(self, callback_query):
         """Показ меню информации о боте v25.1"""
         try:
+            logger.info(f"🔍 DEBUG _show_about_v25: попытка создать WebApp для user={callback_query.from_user.id}")
+            
             # Получаем URL из переменной окружения с валидацией
             webapp_url = os.getenv('WEBAPP_URL')
             if not webapp_url:
