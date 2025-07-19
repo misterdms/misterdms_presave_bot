@@ -1,349 +1,514 @@
 """
-Система логирования Do Presave Reminder Bot v25+
-Структурированное логирование с эмодзи для всех планов развития
+Utils/logger.py - Система логирования
+Do Presave Reminder Bot v29.07
+
+Настраиваемая система логирования с поддержкой структурированных логов
 """
 
 import logging
-import sys
+import logging.handlers
 import os
+import sys
+import time
+import json
+from typing import Dict, Any, Optional
 from datetime import datetime
-from typing import Optional, Dict, Any
+from pathlib import Path
 
-# Настройка цветного вывода (если доступен colorama)
 try:
-    from colorama import init, Fore, Back, Style
-    init(autoreset=True)
-    COLORAMA_AVAILABLE = True
+    import colorlog
+    COLORLOG_AVAILABLE = True
 except ImportError:
-    COLORAMA_AVAILABLE = False
+    COLORLOG_AVAILABLE = False
 
-class EmojiFormatter(logging.Formatter):
-    """Форматтер логов с эмодзи"""
-    
-    # Эмодзи для разных уровней логирования
-    EMOJI_MAP = {
-        'DEBUG': '🔍',
-        'INFO': '✅',
-        'WARNING': '⚠️',
-        'ERROR': '❌',
-        'CRITICAL': '🚨'
-    }
-    
-    # Цвета для уровней (если colorama доступен)
-    COLOR_MAP = {
-        'DEBUG': Fore.CYAN if COLORAMA_AVAILABLE else '',
-        'INFO': Fore.GREEN if COLORAMA_AVAILABLE else '',
-        'WARNING': Fore.YELLOW if COLORAMA_AVAILABLE else '',
-        'ERROR': Fore.RED if COLORAMA_AVAILABLE else '',
-        'CRITICAL': Fore.RED + Style.BRIGHT if COLORAMA_AVAILABLE else ''
-    }
-    
-    def __init__(self, include_timestamp=True, include_module=True):
-        """Инициализация форматтера"""
-        self.include_timestamp = include_timestamp
-        self.include_module = include_module
-        super().__init__()
+
+class StructuredFormatter(logging.Formatter):
+    """Форматтер для структурированных логов"""
     
     def format(self, record):
-        """Форматирование записи лога"""
-        # Получаем эмодзи и цвет для уровня
-        emoji = self.EMOJI_MAP.get(record.levelname, '📝')
-        color = self.COLOR_MAP.get(record.levelname, '')
+        # Базовая информация
+        log_entry = {
+            "timestamp": datetime.fromtimestamp(record.created).isoformat(),
+            "level": record.levelname,
+            "logger": record.name,
+            "message": record.getMessage(),
+            "module": record.module,
+            "function": record.funcName,
+            "line": record.lineno
+        }
         
-        # Формируем части сообщения
-        parts = []
+        # Добавляем дополнительные поля если есть
+        if hasattr(record, 'user_id'):
+            log_entry['user_id'] = record.user_id
+        if hasattr(record, 'group_id'):
+            log_entry['group_id'] = record.group_id
+        if hasattr(record, 'command'):
+            log_entry['command'] = record.command
+        if hasattr(record, 'module_name'):
+            log_entry['module_name'] = record.module_name
+        if hasattr(record, 'execution_time'):
+            log_entry['execution_time'] = record.execution_time
         
-        # Временная метка
-        if self.include_timestamp:
-            timestamp = datetime.fromtimestamp(record.created).strftime('%H:%M:%S')
-            parts.append(f"[{timestamp}]")
-        
-        # Эмодзи и уровень
-        if COLORAMA_AVAILABLE and color:
-            level_part = f"{color}{emoji} {record.levelname}{Style.RESET_ALL}"
-        else:
-            level_part = f"{emoji} {record.levelname}"
-        parts.append(level_part)
-        
-        # Модуль (если включен)
-        if self.include_module and hasattr(record, 'name'):
-            module_name = record.name.split('.')[-1]  # Только последняя часть
-            parts.append(f"[{module_name}]")
-        
-        # Основное сообщение
-        message = record.getMessage()
-        parts.append(message)
-        
-        # Собираем все вместе
-        formatted_message = " ".join(parts)
-        
-        # Добавляем исключение если есть
+        # Исключения
         if record.exc_info:
-            formatted_message += "\n" + self.formatException(record.exc_info)
+            log_entry['exception'] = self.formatException(record.exc_info)
         
-        return formatted_message
+        return json.dumps(log_entry, ensure_ascii=False)
 
 
-class StructuredLogger:
-    """Структурированный логгер с дополнительными возможностями"""
+class ColoredFormatter(logging.Formatter):
+    """Цветной форматтер для консоли"""
     
-    def __init__(self, name: str):
-        self.logger = logging.getLogger(name)
-        self.context = {}
+    def __init__(self):
+        if COLORLOG_AVAILABLE:
+            super().__init__()
+            self.colored_formatter = colorlog.ColoredFormatter(
+                fmt='%(log_color)s%(asctime)s %(levelname)-8s %(name)-20s %(message)s',
+                datefmt='%H:%M:%S',
+                log_colors={
+                    'DEBUG': 'cyan',
+                    'INFO': 'green',
+                    'WARNING': 'yellow',
+                    'ERROR': 'red',
+                    'CRITICAL': 'red,bg_white',
+                }
+            )
+        else:
+            super().__init__(
+                fmt='%(asctime)s %(levelname)-8s %(name)-20s %(message)s',
+                datefmt='%H:%M:%S'
+            )
     
-    def set_context(self, **kwargs):
-        """Установка контекста для логирования"""
-        self.context.update(kwargs)
-    
-    def clear_context(self):
-        """Очистка контекста"""
-        self.context.clear()
-    
-    def _format_message(self, message: str, extra: Optional[Dict[str, Any]] = None) -> str:
-        """Форматирование сообщения с контекстом"""
-        if not self.context and not extra:
-            return message
-        
-        # Объединяем контекст и дополнительные данные
-        full_context = {**self.context}
-        if extra:
-            full_context.update(extra)
-        
-        # Добавляем контекст к сообщению
-        if full_context:
-            context_str = " | ".join([f"{k}={v}" for k, v in full_context.items()])
-            return f"{message} | {context_str}"
-        
-        return message
-    
-    def debug(self, message: str, **extra):
-        """Отладочное сообщение"""
-        self.logger.debug(self._format_message(message, extra))
-    
-    def info(self, message: str, **extra):
-        """Информационное сообщение"""
-        self.logger.info(self._format_message(message, extra))
-    
-    def warning(self, message: str, **extra):
-        """Предупреждение"""
-        self.logger.warning(self._format_message(message, extra))
-    
-    def error(self, message: str, **extra):
-        """Ошибка"""
-        self.logger.error(self._format_message(message, extra))
-    
-    def critical(self, message: str, **extra):
-        """Критическая ошибка"""
-        self.logger.critical(self._format_message(message, extra))
-    
-    def exception(self, message: str, **extra):
-        """Ошибка с исключением"""
-        self.logger.exception(self._format_message(message, extra))
+    def format(self, record):
+        if COLORLOG_AVAILABLE:
+            return self.colored_formatter.format(record)
+        else:
+            return super().format(record)
 
 
-def setup_logging(level: str = None, log_format: str = None):
-    """Настройка системы логирования"""
+class BotLogger:
+    """Главный класс логирования для бота"""
     
-    # Получаем настройки из переменных окружения
-    if level is None:
-        level = os.getenv('LOG_LEVEL', 'INFO')
-    if log_format is None:
-        log_format = os.getenv('LOG_FORMAT', 'structured')
+    def __init__(self):
+        self.loggers = {}
+        self.handlers = {}
+        self.log_level = logging.INFO
+        self.log_format = "simple"
+        self.log_dir = Path("logs")
+        self.max_log_size = 10 * 1024 * 1024  # 10MB
+        self.backup_count = 5
+        
+    def setup_logging(self, settings=None):
+        """Настройка системы логирования"""
+        try:
+            # Получаем настройки из переменных окружения или объекта настроек
+            if settings:
+                self.log_level = getattr(logging, settings.config.get('log_level', 'INFO').upper())
+                self.log_format = settings.config.get('log_format', 'simple')
+            else:
+                self.log_level = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper())
+                self.log_format = os.getenv('LOG_FORMAT', 'simple')
+            
+            # Создаем директорию для логов
+            self.log_dir.mkdir(exist_ok=True)
+            
+            # Настраиваем root logger
+            root_logger = logging.getLogger()
+            root_logger.setLevel(self.log_level)
+            
+            # Очищаем существующие handlers
+            for handler in root_logger.handlers[:]:
+                root_logger.removeHandler(handler)
+            
+            # Добавляем handlers
+            self._setup_console_handler(root_logger)
+            self._setup_file_handler(root_logger)
+            
+            # Настраиваем специальные логгеры
+            self._setup_module_loggers()
+            
+            # Подавляем слишком болтливые библиотеки
+            self._suppress_noisy_loggers()
+            
+            logging.info("✅ Система логирования настроена")
+            logging.info(f"📊 Уровень логирования: {logging.getLevelName(self.log_level)}")
+            logging.info(f"🎨 Формат логов: {self.log_format}")
+            
+        except Exception as e:
+            print(f"❌ Ошибка настройки логирования: {e}")
+            raise
     
-    # Преобразуем уровень
-    numeric_level = getattr(logging, level.upper(), logging.INFO)
+    def _setup_console_handler(self, logger):
+        """Настройка консольного handler"""
+        console_handler = logging.StreamHandler(sys.stdout)
+        console_handler.setLevel(self.log_level)
+        
+        if self.log_format == "structured":
+            console_handler.setFormatter(StructuredFormatter())
+        else:
+            console_handler.setFormatter(ColoredFormatter())
+        
+        logger.addHandler(console_handler)
+        self.handlers['console'] = console_handler
     
-    # Создаем форматтер
-    if log_format.lower() == 'structured':
-        formatter = EmojiFormatter(include_timestamp=True, include_module=True)
+    def _setup_file_handler(self, logger):
+        """Настройка файлового handler"""
+        try:
+            # Основной лог файл
+            main_log_file = self.log_dir / "presave_bot.log"
+            file_handler = logging.handlers.RotatingFileHandler(
+                main_log_file,
+                maxBytes=self.max_log_size,
+                backupCount=self.backup_count,
+                encoding='utf-8'
+            )
+            file_handler.setLevel(self.log_level)
+            
+            if self.log_format == "structured":
+                file_handler.setFormatter(StructuredFormatter())
+            else:
+                file_handler.setFormatter(logging.Formatter(
+                    fmt='%(asctime)s [%(levelname)s] %(name)s: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                ))
+            
+            logger.addHandler(file_handler)
+            self.handlers['file'] = file_handler
+            
+            # Отдельный файл для ошибок
+            error_log_file = self.log_dir / "errors.log"
+            error_handler = logging.handlers.RotatingFileHandler(
+                error_log_file,
+                maxBytes=self.max_log_size,
+                backupCount=self.backup_count,
+                encoding='utf-8'
+            )
+            error_handler.setLevel(logging.ERROR)
+            error_handler.setFormatter(logging.Formatter(
+                fmt='%(asctime)s [%(levelname)s] %(name)s: %(message)s\n%(pathname)s:%(lineno)d\n',
+                datefmt='%Y-%m-%d %H:%M:%S'
+            ))
+            
+            logger.addHandler(error_handler)
+            self.handlers['error'] = error_handler
+            
+        except Exception as e:
+            print(f"⚠️ Не удалось настроить файловые логи: {e}")
+    
+    def _setup_module_loggers(self):
+        """Настройка логгеров для модулей"""
+        # Модули с отдельными лог файлами
+        special_modules = {
+            'module.user_management': 'user_management.log',
+            'module.track_support': 'track_support.log',
+            'module.karma_system': 'karma_system.log',
+            'webapp': 'webapp.log',
+            'database': 'database.log',
+            'telegram_api': 'telegram.log'
+        }
+        
+        for module_name, log_file in special_modules.items():
+            try:
+                module_logger = logging.getLogger(module_name)
+                
+                # Файловый handler для модуля
+                log_path = self.log_dir / log_file
+                module_handler = logging.handlers.RotatingFileHandler(
+                    log_path,
+                    maxBytes=5 * 1024 * 1024,  # 5MB для модулей
+                    backupCount=3,
+                    encoding='utf-8'
+                )
+                module_handler.setLevel(logging.DEBUG)
+                module_handler.setFormatter(logging.Formatter(
+                    fmt='%(asctime)s [%(levelname)s]: %(message)s',
+                    datefmt='%Y-%m-%d %H:%M:%S'
+                ))
+                
+                module_logger.addHandler(module_handler)
+                module_logger.propagate = True  # Также отправляем в основные логи
+                
+                self.handlers[f'module_{module_name}'] = module_handler
+                
+            except Exception as e:
+                logging.warning(f"⚠️ Не удалось настроить логгер для {module_name}: {e}")
+    
+    def _suppress_noisy_loggers(self):
+        """Подавление слишком болтливых библиотек"""
+        noisy_loggers = [
+            'urllib3.connectionpool',
+            'requests.packages.urllib3.connectionpool',
+            'asyncio',
+            'telebot.async_telebot',
+            'sqlalchemy.engine',
+            'sqlalchemy.pool',
+            'aiohttp.access'
+        ]
+        
+        for logger_name in noisy_loggers:
+            logging.getLogger(logger_name).setLevel(logging.WARNING)
+    
+    def get_logger(self, name: str) -> logging.Logger:
+        """Получение логгера с именем"""
+        if name not in self.loggers:
+            self.loggers[name] = logging.getLogger(name)
+        return self.loggers[name]
+    
+    def get_module_logger(self, module_name: str) -> logging.Logger:
+        """Получение логгера для модуля"""
+        logger_name = f"module.{module_name}"
+        return self.get_logger(logger_name)
+
+
+# Глобальный экземпляр
+_bot_logger = BotLogger()
+
+
+def setup_logging(settings=None):
+    """Публичная функция для настройки логирования"""
+    _bot_logger.setup_logging(settings)
+
+
+def get_logger(name: str = None) -> logging.Logger:
+    """Получение логгера"""
+    if name is None:
+        name = __name__
+    return _bot_logger.get_logger(name)
+
+
+def get_module_logger(module_name: str) -> logging.Logger:
+    """Получение логгера для модуля"""
+    return _bot_logger.get_module_logger(module_name)
+
+
+# === СПЕЦИАЛЬНЫЕ ФУНКЦИИ ЛОГИРОВАНИЯ ===
+
+def log_user_action(user_id: int, action: str, details: Optional[Dict[str, Any]] = None, logger_name: str = "user_actions"):
+    """Логирование действий пользователя"""
+    logger = get_logger(logger_name)
+    
+    extra = {
+        'user_id': user_id,
+        'action': action
+    }
+    
+    if details:
+        extra.update(details)
+    
+    message = f"User {user_id} performed action: {action}"
+    if details:
+        message += f" | Details: {details}"
+    
+    logger.info(message, extra=extra)
+
+
+def log_command_execution(user_id: int, command: str, execution_time: float = None, success: bool = True, error: str = None):
+    """Логирование выполнения команд"""
+    logger = get_logger("commands")
+    
+    extra = {
+        'user_id': user_id,
+        'command': command,
+        'success': success
+    }
+    
+    if execution_time is not None:
+        extra['execution_time'] = execution_time
+    
+    if success:
+        message = f"Command /{command} executed successfully by user {user_id}"
+        if execution_time:
+            message += f" in {execution_time:.3f}s"
+        logger.info(message, extra=extra)
     else:
-        # Простой форматтер без эмодзи
-        formatter = logging.Formatter(
-            '%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            datefmt='%H:%M:%S'
-        )
+        message = f"Command /{command} failed for user {user_id}"
+        if error:
+            message += f": {error}"
+        logger.error(message, extra=extra)
+
+
+def log_module_activity(module_name: str, activity: str, details: Optional[Dict[str, Any]] = None):
+    """Логирование активности модулей"""
+    logger = get_module_logger(module_name)
     
-    # Настраиваем root logger
-    root_logger = logging.getLogger()
-    root_logger.setLevel(numeric_level)
+    extra = {
+        'module_name': module_name,
+        'activity': activity
+    }
     
-    # Удаляем существующие handlers
-    for handler in root_logger.handlers[:]:
-        root_logger.removeHandler(handler)
+    if details:
+        extra.update(details)
     
-    # Создаем handler для консоли
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setFormatter(formatter)
-    console_handler.setLevel(numeric_level)
+    message = f"Module {module_name}: {activity}"
+    if details:
+        message += f" | {details}"
     
-    # Добавляем handler
-    root_logger.addHandler(console_handler)
+    logger.info(message, extra=extra)
+
+
+def log_webapp_interaction(user_id: int, action: str, data: Optional[Dict[str, Any]] = None):
+    """Логирование взаимодействий с WebApp"""
+    logger = get_logger("webapp")
     
-    # Настраиваем уровни для сторонних библиотек
-    logging.getLogger('urllib3').setLevel(logging.WARNING)
-    logging.getLogger('telebot').setLevel(logging.WARNING)
+    extra = {
+        'user_id': user_id,
+        'webapp_action': action
+    }
     
-    # ПЛАН 3: Настройки для ИИ библиотек (ЗАГЛУШКИ)
-    # logging.getLogger('openai').setLevel(logging.WARNING)
-    # logging.getLogger('anthropic').setLevel(logging.WARNING)
+    if data:
+        extra['webapp_data'] = data
     
-    print(f"✅ Логирование настроено: уровень {level}, формат {log_format}")
-
-
-def get_logger(name: str) -> StructuredLogger:
-    """Получение структурированного логгера"""
-    return StructuredLogger(name)
-
-
-class LoggerContextManager:
-    """Контекстный менеджер для логирования с дополнительным контекстом"""
+    message = f"WebApp interaction from user {user_id}: {action}"
+    if data:
+        message += f" | Data: {data}"
     
-    def __init__(self, logger: StructuredLogger, **context):
-        self.logger = logger
-        self.context = context
-        self.old_context = None
+    logger.info(message, extra=extra)
+
+
+def log_database_operation(operation: str, table: str = None, execution_time: float = None, success: bool = True, error: str = None):
+    """Логирование операций с базой данных"""
+    logger = get_logger("database")
     
-    def __enter__(self):
-        # Сохраняем старый контекст
-        self.old_context = self.logger.context.copy()
-        # Устанавливаем новый контекст
-        self.logger.set_context(**self.context)
-        return self.logger
+    extra = {
+        'db_operation': operation,
+        'success': success
+    }
     
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        # Восстанавливаем старый контекст
-        self.logger.context = self.old_context
-
-
-# Специализированные логгеры для разных модулей
-
-def log_user_action(logger: StructuredLogger, user_id: int, action: str, **extra):
-    """Логирование действия пользователя"""
-    logger.info(f"Пользователь {user_id}: {action}", user_id=user_id, action=action, **extra)
-
-def log_admin_action(logger: StructuredLogger, admin_id: int, action: str, target: str = None, **extra):
-    """Логирование действия администратора"""
-    context = {'admin_id': admin_id, 'action': action}
-    if target:
-        context['target'] = target
-    context.update(extra)
+    if table:
+        extra['table'] = table
+    if execution_time is not None:
+        extra['execution_time'] = execution_time
     
-    logger.info(f"Админ {admin_id}: {action}" + (f" → {target}" if target else ""), **context)
+    if success:
+        message = f"DB operation {operation}"
+        if table:
+            message += f" on {table}"
+        if execution_time:
+            message += f" completed in {execution_time:.3f}s"
+        logger.debug(message, extra=extra)
+    else:
+        message = f"DB operation {operation} failed"
+        if table:
+            message += f" on {table}"
+        if error:
+            message += f": {error}"
+        logger.error(message, extra=extra)
 
-def log_api_call(logger: StructuredLogger, method: str, endpoint: str, status: str, **extra):
-    """Логирование API вызова"""
-    logger.info(f"API {method} {endpoint}: {status}", 
-                method=method, endpoint=endpoint, status=status, **extra)
 
-def log_database_operation(logger: StructuredLogger, operation: str, table: str, count: int = None, **extra):
-    """Логирование операции с базой данных"""
-    context = {'operation': operation, 'table': table}
-    if count is not None:
-        context['count'] = count
-    context.update(extra)
+def log_performance_metric(metric_name: str, value: float, unit: str = "ms", context: Optional[Dict[str, Any]] = None):
+    """Логирование метрик производительности"""
+    if not os.getenv("ENABLE_PERFORMANCE_LOGS", "false").lower() == "true":
+        return
     
-    count_str = f" ({count} записей)" if count is not None else ""
-    logger.info(f"БД {operation} в {table}{count_str}", **context)
-
-# ПЛАН 2: Логирование кармы (ЗАГЛУШКИ)
-# def log_karma_change(logger: StructuredLogger, user_id: int, admin_id: int, 
-#                      old_karma: int, new_karma: int, reason: str = None):
-#     """Логирование изменения кармы"""
-#     change = new_karma - old_karma
-#     change_str = f"+{change}" if change > 0 else str(change)
-#     
-#     logger.info(f"Карма изменена: пользователь {user_id} {old_karma}→{new_karma} ({change_str})",
-#                 user_id=user_id, admin_id=admin_id, old_karma=old_karma, 
-#                 new_karma=new_karma, change=change, reason=reason)
-
-# ПЛАН 3: Логирование ИИ (ЗАГЛУШКИ)
-# def log_ai_interaction(logger: StructuredLogger, user_id: int, model: str, 
-#                        prompt_tokens: int, completion_tokens: int, **extra):
-#     """Логирование взаимодействия с ИИ"""
-#     total_tokens = prompt_tokens + completion_tokens
-#     logger.info(f"ИИ взаимодействие: пользователь {user_id}, модель {model}, токенов {total_tokens}",
-#                 user_id=user_id, model=model, prompt_tokens=prompt_tokens,
-#                 completion_tokens=completion_tokens, total_tokens=total_tokens, **extra)
-
-# def log_gratitude_detection(logger: StructuredLogger, from_user: int, to_user: int, 
-#                            trigger_word: str, karma_added: int):
-#     """Логирование автоматического начисления кармы за благодарность"""
-#     logger.info(f"Автокарма: {from_user}→{to_user} +{karma_added} за '{trigger_word}'",
-#                 from_user=from_user, to_user=to_user, trigger_word=trigger_word, karma_added=karma_added)
-
-# ПЛАН 4: Логирование backup (ЗАГЛУШКИ)
-# def log_backup_operation(logger: StructuredLogger, operation: str, filename: str = None, 
-#                          size_mb: float = None, duration_seconds: float = None, **extra):
-#     """Логирование операций backup"""
-#     context = {'operation': operation}
-#     if filename:
-#         context['filename'] = filename
-#     if size_mb:
-#         context['size_mb'] = round(size_mb, 2)
-#     if duration_seconds:
-#         context['duration_seconds'] = round(duration_seconds, 2)
-#     context.update(extra)
-#     
-#     size_str = f" ({size_mb:.1f}MB)" if size_mb else ""
-#     duration_str = f" за {duration_seconds:.1f}с" if duration_seconds else ""
-#     
-#     logger.info(f"Backup {operation}: {filename or 'неизвестно'}{size_str}{duration_str}", **context)
-
-
-# Утилита для измерения производительности
-class PerformanceLogger:
-    """Логгер производительности"""
+    logger = get_logger("performance")
     
-    def __init__(self, logger: StructuredLogger, operation: str):
-        self.logger = logger
-        self.operation = operation
+    extra = {
+        'metric_name': metric_name,
+        'metric_value': value,
+        'metric_unit': unit
+    }
+    
+    if context:
+        extra['context'] = context
+    
+    message = f"Performance metric {metric_name}: {value}{unit}"
+    if context:
+        message += f" | Context: {context}"
+    
+    logger.info(message, extra=extra)
+
+
+# === КОНТЕКСТНЫЕ МЕНЕДЖЕРЫ ===
+
+class LogExecutionTime:
+    """Контекстный менеджер для логирования времени выполнения"""
+    
+    def __init__(self, operation_name: str, logger_name: str = None, log_level: int = logging.INFO):
+        self.operation_name = operation_name
+        self.logger = get_logger(logger_name or __name__)
+        self.log_level = log_level
         self.start_time = None
     
     def __enter__(self):
-        if os.getenv('ENABLE_PERFORMANCE_LOGS', 'false').lower() == 'true':
-            from time import perf_counter
-            self.start_time = perf_counter()
+        self.start_time = time.time()
         return self
     
     def __exit__(self, exc_type, exc_val, exc_tb):
-        if self.start_time is not None:
-            from time import perf_counter
-            duration = perf_counter() - self.start_time
-            self.logger.info(f"Производительность: {self.operation} выполнено за {duration:.3f}с",
-                            operation=self.operation, duration_seconds=duration)
+        execution_time = time.time() - self.start_time
+        
+        if exc_type is None:
+            self.logger.log(
+                self.log_level,
+                f"✅ {self.operation_name} completed in {execution_time:.3f}s",
+                extra={'execution_time': execution_time, 'operation': self.operation_name}
+            )
+        else:
+            self.logger.error(
+                f"❌ {self.operation_name} failed after {execution_time:.3f}s: {exc_val}",
+                extra={'execution_time': execution_time, 'operation': self.operation_name}
+            )
+
+
+# === УТИЛИТЫ ===
+
+def get_log_stats() -> Dict[str, Any]:
+    """Получение статистики логирования"""
+    try:
+        stats = {
+            "log_level": logging.getLevelName(_bot_logger.log_level),
+            "log_format": _bot_logger.log_format,
+            "handlers_count": len(_bot_logger.handlers),
+            "loggers_count": len(_bot_logger.loggers),
+            "log_directory": str(_bot_logger.log_dir),
+            "colorlog_available": COLORLOG_AVAILABLE
+        }
+        
+        # Размеры лог файлов
+        if _bot_logger.log_dir.exists():
+            log_files = {}
+            for log_file in _bot_logger.log_dir.glob("*.log"):
+                try:
+                    size = log_file.stat().st_size
+                    log_files[log_file.name] = {
+                        "size_bytes": size,
+                        "size_mb": round(size / 1024 / 1024, 2)
+                    }
+                except OSError:
+                    pass
+            stats["log_files"] = log_files
+        
+        return stats
+        
+    except Exception as e:
+        return {"error": str(e)}
 
 
 if __name__ == "__main__":
-    """Тестирование системы логирования"""
+    # Тестирование системы логирования
+    print("🧪 Тестирование системы логирования...")
     
-    # Настройка логирования
-    setup_logging('DEBUG', 'structured')
+    # Настраиваем логирование
+    setup_logging()
     
-    # Создание тестового логгера
-    logger = get_logger('test')
+    # Тестируем разные типы логов
+    logger = get_logger("test")
     
-    # Тестирование разных уровней
-    logger.debug("Это отладочное сообщение")
-    logger.info("Это информационное сообщение")
-    logger.warning("Это предупреждение")
-    logger.error("Это ошибка")
-    logger.critical("Это критическая ошибка")
+    logger.debug("🔍 Debug сообщение")
+    logger.info("ℹ️ Info сообщение")
+    logger.warning("⚠️ Warning сообщение")
+    logger.error("❌ Error сообщение")
     
-    # Тестирование с контекстом
-    logger.set_context(user_id=12345, action="test")
-    logger.info("Сообщение с контекстом")
+    # Тестируем специальные функции
+    log_user_action(12345, "test_action", {"test": "data"})
+    log_command_execution(12345, "test", 0.123, True)
+    log_module_activity("test_module", "test_activity", {"key": "value"})
     
-    # Тестирование контекстного менеджера
-    with LoggerContextManager(logger, session_id="test_session", module="testing"):
-        logger.info("Сообщение в контексте сессии")
-    
-    # Тестирование специализированных функций
-    log_user_action(logger, 12345, "отправил команду /start")
-    log_admin_action(logger, 67890, "изменил настройки", target="лимиты API")
-    
-    # Тестирование производительности
-    with PerformanceLogger(logger, "тестовая операция"):
-        import time
+    # Тестируем контекстный менеджер
+    with LogExecutionTime("test_operation"):
         time.sleep(0.1)
     
-    print("✅ Тестирование логирования завершено")
+    # Показываем статистику
+    stats = get_log_stats()
+    print(f"📊 Статистика логирования: {json.dumps(stats, indent=2, ensure_ascii=False)}")
+    
+    print("✅ Тестирование завершено")
