@@ -1,0 +1,499 @@
+/* Анимации для Do Presave Reminder Bot WebApp */
+
+/* ===== KEYFRAMES ===== */
+@keyframes fadeInDown {
+    from {
+        opacity: 0;
+        transform: translateY(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+
+@keyframes fadeInLeft {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes fadeInRight {
+    from {
+        opacity: 0;
+        transform: translateX(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes slideDown {
+    from {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+}
+
+@keyframes slideUp {
+    from {
+        opacity: 1;
+        transform: translateX(-50%) translateY(0);
+    }
+    to {
+        opacity: 0;
+        transform: translateX(-50%) translateY(-20px);
+    }
+}
+
+@keyframes pulse {
+    0% {
+        transform: scale(1);
+    }
+    50% {
+        transform: scale(1.05);
+    }
+    100% {
+        transform: scale(1);
+    }
+}
+
+@keyframes heartbeat {
+    0% {
+        transform: scale(1);
+    }
+    14% {
+        transform: scale(1.1);
+    }
+    28% {
+        transform: scale(1);
+    }
+    42% {
+        transform: scale(1.1);
+    }
+    70% {
+        transform: scale(1);
+    }
+}
+
+@keyframes countUp {
+    from {
+        opacity: 0;
+        transform: translateY(10px) scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+}
+
+@keyframes bounce {
+    0%, 20%, 53%, 80%, 100% {
+        animation-timing-function: cubic-bezier(0.215, 0.610, 0.355, 1.000);
+        transform: translateY(0);
+    }
+    40%, 43% {
+        animation-timing-function: cubic-bezier(0.755, 0.050, 0.855, 0.060);
+        transform: translateY(-10px);
+    }
+    70% {
+        animation-timing-function: cubic-bezier(0.755, 0.050, 0.855, 0.060);
+        transform: translateY(-5px);
+    }
+    90% {
+        transform: translateY(-2px);
+    }
+}
+
+@keyframes shake {
+    0%, 100% {
+        transform: translateX(0);
+    }
+    10%, 30%, 50%, 70%, 90% {
+        transform: translateX(-2px);
+    }
+    20%, 40%, 60%, 80% {
+        transform: translateX(2px);
+    }
+}
+
+@keyframes rotate {
+    from {
+        transform: rotate(0deg);
+    }
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+@keyframes glow {
+    0% {
+        box-shadow: 0 0 5px rgba(255, 255, 255, 0.2);
+    }
+    50% {
+        box-shadow: 0 0 20px rgba(255, 255, 255, 0.4);
+    }
+    100% {
+        box-shadow: 0 0 5px rgba(255, 255, 255, 0.2);
+    }
+}
+
+@keyframes float {
+    0% {
+        transform: translateY(0px);
+    }
+    50% {
+        transform: translateY(-10px);
+    }
+    100% {
+        transform: translateY(0px);
+    }
+}
+
+@keyframes slideInBlur {
+    from {
+        opacity: 0;
+        transform: translateX(-30px);
+        filter: blur(10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+        filter: blur(0);
+    }
+}
+
+@keyframes scaleIn {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: scale(1);
+    }
+}
+
+@keyframes ripple {
+    0% {
+        transform: scale(0);
+        opacity: 1;
+    }
+    100% {
+        transform: scale(4);
+        opacity: 0;
+    }
+}
+
+@keyframes typewriter {
+    from {
+        width: 0;
+    }
+    to {
+        width: 100%;
+    }
+}
+
+@keyframes gradient {
+    0% {
+        background-position: 0% 50%;
+    }
+    50% {
+        background-position: 100% 50%;
+    }
+    100% {
+        background-position: 0% 50%;
+    }
+}
+
+/* ===== КЛАССЫ АНИМАЦИИ С ЗАДЕРЖКАМИ ===== */
+.animation-delay-1 { 
+    animation-delay: 0.1s; 
+    opacity: 0;
+    animation-fill-mode: forwards;
+}
+
+.animation-delay-2 { 
+    animation-delay: 0.2s; 
+    opacity: 0;
+    animation-fill-mode: forwards;
+}
+
+.animation-delay-3 { 
+    animation-delay: 0.3s; 
+    opacity: 0;
+    animation-fill-mode: forwards;
+}
+
+.animation-delay-4 { 
+    animation-delay: 0.4s; 
+    opacity: 0;
+    animation-fill-mode: forwards;
+}
+
+.animation-delay-5 { 
+    animation-delay: 0.5s; 
+    opacity: 0;
+    animation-fill-mode: forwards;
+}
+
+/* ===== СПЕЦИАЛЬНЫЕ АНИМАЦИИ ДЛЯ ЭЛЕМЕНТОВ ===== */
+
+/* Анимация загрузки счетчиков */
+.stat-value {
+    animation: countUp 1s ease-out;
+}
+
+.stat-value.animate {
+    animation: countUp 0.8s ease-out, pulse 0.3s ease-out 0.8s;
+}
+
+/* Пульсация для важных элементов */
+.btn-primary {
+    animation: pulse 3s infinite;
+}
+
+.bot-icon {
+    animation: float 4s ease-in-out infinite;
+}
+
+/* Анимация для карточек рангов */
+.rank-mini {
+    animation: scaleIn 0.5s ease-out;
+}
+
+.rank-mini:nth-child(1) { animation-delay: 0.1s; opacity: 0; animation-fill-mode: forwards; }
+.rank-mini:nth-child(2) { animation-delay: 0.2s; opacity: 0; animation-fill-mode: forwards; }
+.rank-mini:nth-child(3) { animation-delay: 0.3s; opacity: 0; animation-fill-mode: forwards; }
+.rank-mini:nth-child(4) { animation-delay: 0.4s; opacity: 0; animation-fill-mode: forwards; }
+
+/* Анимация появления уведомлений */
+.notification {
+    animation: slideDown 0.3s ease-out;
+}
+
+.notification.hide {
+    animation: slideUp 0.3s ease-in forwards;
+}
+
+/* Анимация для лоадера */
+.loader-icon {
+    animation: pulse 2s infinite, rotate 4s linear infinite;
+}
+
+/* Анимация для кнопок при клике */
+.btn:active,
+.feature-btn:active {
+    animation: bounce 0.3s ease-out;
+}
+
+/* Анимация для иконок при наведении */
+.feature-icon {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.feature-card:hover .feature-icon {
+    animation: heartbeat 1s ease-in-out;
+}
+
+/* Градиентная анимация для заголовка */
+.title {
+    background: linear-gradient(-45deg, #ffffff, #f0f0f0, #e0e0e0, #ffffff);
+    background-size: 400% 400%;
+    animation: gradient 3s ease infinite;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+/* Анимация для статистики при обновлении */
+.stats-grid.updating .stat-value {
+    animation: pulse 0.5s ease-in-out;
+}
+
+/* Анимация загрузки страницы */
+.container > * {
+    animation: fadeInUp 0.8s ease-out;
+}
+
+.container > *:nth-child(1) { animation-delay: 0.1s; opacity: 0; animation-fill-mode: forwards; }
+.container > *:nth-child(2) { animation-delay: 0.2s; opacity: 0; animation-fill-mode: forwards; }
+.container > *:nth-child(3) { animation-delay: 0.3s; opacity: 0; animation-fill-mode: forwards; }
+.container > *:nth-child(4) { animation-delay: 0.4s; opacity: 0; animation-fill-mode: forwards; }
+.container > *:nth-child(5) { animation-delay: 0.5s; opacity: 0; animation-fill-mode: forwards; }
+
+/* Плавные переходы для интерактивных элементов */
+.feature-card,
+.rank-mini,
+.btn,
+.bot-link,
+.stat-item {
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Анимация эффекта ripple для кнопок */
+.btn::after,
+.feature-btn::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 0;
+    height: 0;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.3);
+    transform: translate(-50%, -50%);
+    transition: width 0.3s ease, height 0.3s ease;
+    pointer-events: none;
+}
+
+.btn:active::after,
+.feature-btn:active::after {
+    width: 100px;
+    height: 100px;
+    animation: ripple 0.6s ease-out;
+}
+
+/* Анимация для ссылок футера */
+.footer-link {
+    position: relative;
+    overflow: hidden;
+}
+
+.footer-link::before {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: -100%;
+    width: 100%;
+    height: 1px;
+    background: rgba(255, 255, 255, 0.5);
+    transition: left 0.3s ease;
+}
+
+.footer-link:hover::before {
+    left: 0;
+}
+
+/* Анимация для экосистемы ботов */
+.ecosystem-note {
+    animation: slideInBlur 0.8s ease-out;
+    animation-delay: 0.6s;
+    opacity: 0;
+    animation-fill-mode: forwards;
+}
+
+/* Специальные анимации для мобильных устройств */
+@media (max-width: 768px) {
+    .feature-card:hover {
+        animation: none;
+    }
+    
+    .rank-mini:hover {
+        animation: bounce 0.3s ease-out;
+    }
+}
+
+/* Анимации при скролле (если добавится скролл) */
+.scroll-animate {
+    opacity: 0;
+    transform: translateY(30px);
+    transition: all 0.8s ease-out;
+}
+
+.scroll-animate.in-view {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+/* Анимация успешного действия */
+.success-animation {
+    animation: bounce 0.5s ease-out, glow 1s ease-out 0.5s;
+}
+
+/* Анимация ошибки */
+.error-animation {
+    animation: shake 0.5s ease-out;
+}
+
+/* Анимация загрузки */
+.loading-animation {
+    animation: pulse 1s ease-in-out infinite;
+}
+
+/* Анимация для состояния disabled */
+.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+    animation: fadeInUp 0.3s ease-out reverse;
+}
+
+/* Анимация выхода элементов */
+.fade-out {
+    animation: fadeInUp 0.3s ease-in reverse;
+}
+
+/* Анимация для темы */
+.theme-transition {
+    transition: all 0.5s ease;
+}
+
+/* Анимация для показа/скрытия элементов */
+.show {
+    animation: scaleIn 0.3s ease-out;
+}
+
+.hide {
+    animation: scaleIn 0.3s ease-in reverse;
+}
+
+/* Оптимизация производительности */
+.will-change {
+    will-change: transform, opacity;
+}
+
+/* Анимация только для устройств с достаточной производительностью */
+@media (prefers-reduced-motion: no-preference) {
+    .enhanced-animation {
+        animation: float 3s ease-in-out infinite, 
+                   glow 2s ease-in-out infinite alternate;
+    }
+}
+
+/* Анимации для состояний загрузки данных */
+.skeleton {
+    background: linear-gradient(90deg, rgba(255,255,255,0.1) 25%, rgba(255,255,255,0.2) 50%, rgba(255,255,255,0.1) 75%);
+    background-size: 200% 100%;
+    animation: gradient 2s ease-in-out infinite;
+}
+
+/* Анимация появления WebApp */
+.webapp-enter {
+    animation: fadeInDown 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Анимация выхода из WebApp */
+.webapp-exit {
+    animation: fadeInDown 0.5s cubic-bezier(0.4, 0, 0.2, 1) reverse;
+}
